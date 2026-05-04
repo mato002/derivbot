@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set active_nav = 'copy' %}
+{% block title %}Copy Trading — Deriv Platform{% endblock %}
+{% block content %}
+    <div class="page-inner">
+      <header class="topbar card">
+        <div>
+          <h1>Copy Trading</h1>
+          <p class="subtle">Register as follower; bot trades sync as copy events (demo model)</p>
+        </div>
+        <div class="auth-panel">
+          <span id="authAccount" class="subtle">Not logged in</span>
+          <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+          <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+        </div>
+      </header>
+
+      <div class="grid two-col">
+        <section class="card">
+          <h2>Master</h2>
+          <label>
+            Master ID
+            <input id="masterIdInput" type="text" value="platform_master" />
+          </label>
+          <button id="setMasterBtn" class="btn btn-blue">Set Master</button>
+          <div id="masterStats" class="subtle stats-block"></div>
+        </section>
+
+        <section class="card">
+          <h2>Follow</h2>
+          <label>
+            Follower ID
+            <input id="followerIdInput" type="text" value="follower_1" />
+          </label>
+          <div class="button-row">
+            <button id="followBtn" class="btn btn-start">Follow</button>
+            <button id="unfollowBtn" class="btn btn-stop">Unfollow</button>
+          </div>
+        </section>
+      </div>
+
+      <section class="card full-width">
+        <h2>Recent copy feed</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Follower</th>
+                <th>Result</th>
+                <th>Profit</th>
+              </tr>
+            </thead>
+            <tbody id="copyFeedBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+{% endblock %}

@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% set active_nav = 'tradingview' %}
+{% block title %}TradingView Analysis — Deriv Platform{% endblock %}
+{% block extra_head %}
+    <style>
+      .tradingview-page {
+        max-width: 100%;
+      }
+
+      .tradingview-card {
+        padding: 16px;
+      }
+
+      .tradingview-toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .tradingview-chart-wrap {
+        position: relative;
+        width: 100%;
+        min-height: 600px;
+        border-radius: var(--radius);
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      #tradingview_chart {
+        width: 100%;
+        height: 600px;
+      }
+
+      .market-picker-toggle {
+        border: 1px solid var(--border);
+        background: #fff;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .market-picker-overlay {
+        position: absolute;
+        inset: 12px auto auto 12px;
+        width: min(640px, calc(100% - 24px));
+        max-height: calc(100% - 24px);
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        border: 1px solid #d7deeb;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 10px 28px rgba(18, 30, 58, 0.2);
+        z-index: 12;
+      }
+
+      .market-picker-left {
+        background: #f4f6fa;
+        border-right: 1px solid #dfe5f1;
+        padding: 10px 0;
+        overflow: auto;
+      }
+
+      .market-picker-cat {
+        padding: 10px 16px;
+        cursor: pointer;
+        font-weight: 600;
+        color: #2d3a52;
+      }
+
+      .market-picker-cat--active {
+        background: #eaf0ff;
+        color: #1b52c0;
+      }
+
+      .market-picker-right {
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .market-picker-search {
+        padding: 10px;
+        border-bottom: 1px solid #edf1f8;
+      }
+
+      .market-picker-search input {
+        margin-top: 0;
+      }
+
+      .market-picker-list {
+        overflow: auto;
+        padding: 6px 0;
+      }
+
+      .market-picker-item {
+        width: 100%;
+        border: none;
+        background: #fff;
+        border-bottom: 1px solid #f0f3f9;
+        padding: 11px 14px;
+        text-align: left;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        color: #33425e;
+      }
+
+      .market-picker-item:hover {
+        background: #f7f9fd;
+      }
+
+      .market-picker-item--active {
+        color: #1b52c0;
+        font-weight: 800;
+      }
+
+      .market-picker-close {
+        margin-left: auto;
+        border: none;
+        background: transparent;
+        font-size: 1.2rem;
+        cursor: pointer;
+        color: #5c6b84;
+      }
+
+      @media (max-width: 900px) {
+        .market-picker-overlay {
+          grid-template-columns: 1fr;
+          width: calc(100% - 24px);
+          max-height: min(70vh, 500px);
+        }
+
+        .market-picker-left {
+          max-height: 150px;
+          border-right: none;
+          border-bottom: 1px solid #dfe5f1;
+        }
+      }
+    </style>
+{% endblock %}
+{% block content %}
+    <div class="page-inner tradingview-page">
+      <header class="topbar card">
+        <div>
+          <h1>TradingView Analysis</h1>
+          <p class="subtle">Embedded TradingView chart for market visualization.</p>
+        </div>
+      </header>
+
+      <section class="card tradingview-card">
+        <div class="tradingview-toolbar">
+          <button id="marketPickerToggle" type="button" class="market-picker-toggle">Markets</button>
+          <strong id="tradingviewCurrentSymbol">Volatility 100 Index</strong>
+          <button id="marketPickerClose" type="button" class="market-picker-close hidden" aria-label="Close markets">✕</button>
+          <select id="tradingviewSymbol" class="hidden"></select>
+        </div>
+        <div class="tradingview-chart-wrap">
+          <div id="marketPickerOverlay" class="market-picker-overlay hidden">
+            <div id="marketPickerCategories" class="market-picker-left"></div>
+            <div class="market-picker-right">
+              <div class="market-picker-search">
+                <input id="marketSearchInput" type="search" placeholder="Search..." />
+              </div>
+              <div id="marketPickerList" class="market-picker-list"></div>
+            </div>
+          </div>
+          <div id="tradingview_chart"></div>
+        </div>
+      </section>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+      (function initTradingViewWidget() {
+        if (typeof TradingView === "undefined") return;
+
+        const MARKETS = [
+          { category: "Continuous Indices", name: "Volatility 10 (1s) Index", tv: "DERIV:VOLATILITY_10_1S_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 10 Index", tv: "DERIV:VOLATILITY_10_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 15 (1s) Index", tv: "DERIV:VOLATILITY_15_1S_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 25 (1s) Index", tv: "DERIV:VOLATILITY_25_1S_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 25 Index", tv: "DERIV:VOLATILITY_25_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 50 (1s) Index", tv: "DERIV:VOLATILITY_50_1S_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 50 Index", tv: "DERIV:VOLATILITY_50_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 75 (1s) Index", tv: "DERIV:VOLATILITY_75_1S_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 75 Index", tv: "DERIV:VOLATILITY_75_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 100 (1s) Index", tv: "DERIV:VOLATILITY_100_1S_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 100 Index", tv: "DERIV:VOLATILITY_100_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 10 Jump", tv: "DERIV:VOLATILITY_10_JUMP_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 25 Jump", tv: "DERIV:VOLATILITY_25_JUMP_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 50 Jump", tv: "DERIV:VOLATILITY_50_JUMP_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 75 Jump", tv: "DERIV:VOLATILITY_75_JUMP_INDEX" },
+          { category: "Continuous Indices", name: "Volatility 100 Jump", tv: "DERIV:VOLATILITY_100_JUMP_INDEX" },
+          { category: "Continuous Indices", name: "Step Index", tv: "DERIV:STEP_INDEX" },
+          { category: "Continuous Indices", name: "Drift Switch 10", tv: "DERIV:DRIFT_SWITCH_INDEX_10" },
+          { category: "Continuous Indices", name: "Drift Switch 20", tv: "DERIV:DRIFT_SWITCH_INDEX_20" },
+          { category: "Continuous Indices", name: "Drift Switch 30", tv: "DERIV:DRIFT_SWITCH_INDEX_30" },
+          { category: "Continuous Indices", name: "Boom 300 Index", tv: "DERIV:BOOM_300_INDEX" },
+          { category: "Continuous Indices", name: "Boom 500 Index", tv: "DERIV:BOOM_500_INDEX" },
+          { category: "Continuous Indices", name: "Boom 600 Index", tv: "DERIV:BOOM_600_INDEX" },
+          { category: "Continuous Indices", name: "Boom 900 Index", tv: "DERIV:BOOM_900_INDEX" },
+          { category: "Continuous Indices", name: "Boom 1000 Index", tv: "DERIV:BOOM_1000_INDEX" },
+          { category: "Continuous Indices", name: "Crash 300 Index", tv: "DERIV:CRASH_300_INDEX" },
+          { category: "Continuous Indices", name: "Crash 500 Index", tv: "DERIV:CRASH_500_INDEX" },
+          { category: "Continuous Indices", name: "Crash 600 Index", tv: "DERIV:CRASH_600_INDEX" },
+          { category: "Continuous Indices", name: "Crash 900 Index", tv: "DERIV:CRASH_900_INDEX" },
+          { category: "Continuous Indices", name: "Crash 1000 Index", tv: "DERIV:CRASH_1000_INDEX" },
+          { category: "Continuous Indices", name: "Range Break 100 Index", tv: "DERIV:RANGE_BREAK_100_INDEX" },
+          { category: "Continuous Indices", name: "Range Break 200 Index", tv: "DERIV:RANGE_BREAK_200_INDEX" },
+          { category: "Continuous Indices", name: "Range Break 300 Index", tv: "DERIV:RANGE_BREAK_300_INDEX" },
+          { category: "Continuous Indices", name: "Range Break 600 Index", tv: "DERIV:RANGE_BREAK_600_INDEX" },
+        ];
+        const CATEGORIES = ["Favorites", "Derived", "Synthetics", "Forex", "Stock Indices", "Continuous Indices"];
+
+        const symbolSelect = document.getElementById("tradingviewSymbol");
+        const chartHost = document.getElementById("tradingview_chart");
+        const pickerToggle = document.getElementById("marketPickerToggle");
+        const pickerClose = document.getElementById("marketPickerClose");
+        const pickerOverlay = document.getElementById("marketPickerOverlay");
+        const categoryHost = document.getElementById("marketPickerCategories");
+        const listHost = document.getElementById("marketPickerList");
+        const searchInput = document.getElementById("marketSearchInput");
+        const currentSymbolLabel = document.getElementById("tradingviewCurrentSymbol");
+        if (!symbolSelect || !chartHost || !pickerOverlay || !categoryHost || !listHost) return;
+
+        let activeCategory = "Continuous Indices";
+        let activeSymbol = "DERIV:VOLATILITY_100_INDEX";
+        symbolSelect.innerHTML = MARKETS.map((m) => `<option value="${m.tv}">${m.name}</option>`).join("");
+
+        function renderWidget(symbol) {
+          chartHost.innerHTML = "";
+          new TradingView.widget({
+            container_id: "tradingview_chart",
+            width: "100%",
+            height: 600,
+            symbol: symbol,
+            interval: "1",
+            timezone: "Etc/UTC",
+            theme: "light",
+            style: "1",
+            locale: "en",
+            toolbar_bg: "#f1f3f6",
+            enable_publishing: false,
+            hide_top_toolbar: false,
+            hide_legend: false,
+            save_image: true,
+            studies: [
+              "RSI@tv-basicstudies",
+              "MASimple@tv-basicstudies"
+            ]
+          });
+        }
+
+        function setSymbol(tvSymbol) {
+          const selected = MARKETS.find((m) => m.tv === tvSymbol);
+          if (!selected) return;
+          activeSymbol = selected.tv;
+          symbolSelect.value = selected.tv;
+          if (currentSymbolLabel) currentSymbolLabel.textContent = selected.name;
+          renderWidget(selected.tv);
+          renderMarketList();
+        }
+
+        function renderCategoryList() {
+          categoryHost.innerHTML = "";
+          CATEGORIES.forEach((cat) => {
+            const row = document.createElement("div");
+            row.className = `market-picker-cat ${cat === activeCategory ? "market-picker-cat--active" : ""}`;
+            row.textContent = cat;
+            row.addEventListener("click", () => {
+              activeCategory = cat;
+              renderCategoryList();
+              renderMarketList();
+            });
+            categoryHost.appendChild(row);
+          });
+        }
+
+        function renderMarketList() {
+          const q = String(searchInput?.value || "").trim().toLowerCase();
+          listHost.innerHTML = "";
+          const rows = MARKETS.filter((m) => (activeCategory === "Continuous Indices" ? true : m.category === activeCategory))
+            .filter((m) => !q || m.name.toLowerCase().includes(q));
+          rows.forEach((m) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `market-picker-item ${m.tv === activeSymbol ? "market-picker-item--active" : ""}`;
+            btn.innerHTML = `<span>${m.name}</span><span>☆</span>`;
+            btn.addEventListener("click", () => {
+              setSymbol(m.tv);
+              pickerOverlay.classList.add("hidden");
+              pickerClose?.classList.add("hidden");
+            });
+            listHost.appendChild(btn);
+          });
+          if (!rows.length) {
+            const empty = document.createElement("div");
+            empty.className = "subtle";
+            empty.style.padding = "14px";
+            empty.textContent = "No markets found";
+            listHost.appendChild(empty);
+          }
+        }
+
+        pickerToggle?.addEventListener("click", () => {
+          pickerOverlay.classList.toggle("hidden");
+          pickerClose?.classList.toggle("hidden", pickerOverlay.classList.contains("hidden"));
+        });
+        pickerClose?.addEventListener("click", () => {
+          pickerOverlay.classList.add("hidden");
+          pickerClose.classList.add("hidden");
+        });
+        searchInput?.addEventListener("input", renderMarketList);
+
+        renderCategoryList();
+        renderMarketList();
+        setSymbol(activeSymbol);
+      })();
+    </script>
+{% endblock %}

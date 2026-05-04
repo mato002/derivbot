@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% set active_nav = 'builder' %}
+{% block body_class %}builder-top-tabs{% endblock %}
+{% block title %}Bot Builder — Deriv Platform{% endblock %}
+{% block extra_head %}
+    <script src="https://unpkg.com/blockly/blockly.min.js"></script>
+{% endblock %}
+{% block content %}
+    <div class="page-inner page-inner--builder">
+      <div class="builder-app-shell card">
+        <div class="builder-workbench">
+          <aside class="builder-palette" id="builderSidebar" aria-label="Blocks menu">
+            <button type="button" class="btn btn-start builder-quick-strategy" id="builderQuickStrategyBtn">
+              Quick strategy
+            </button>
+            <div class="builder-sidebar-head">
+              <h3 class="builder-palette-heading">Blocks menu</h3>
+              <button type="button" class="builder-icon-btn" id="builderSidebarToggle" aria-label="Collapse block menu">⌃</button>
+            </div>
+            <div class="builder-palette-search">
+              <input
+                type="search"
+                id="builderBlockSearch"
+                class="builder-search-input"
+                placeholder="Search blocks"
+                autocomplete="off"
+              />
+            </div>
+            <ul class="builder-palette-cats subtle small" id="builderCategoryList">
+              <li data-category="analysis_logics" data-tip-title="Analysis Logics" data-tip-example="trend AND rsi confirms entry"><span class="builder-cat-dot builder-cat-dot--fire"></span><span class="builder-cat-label">Analysis Logics</span></li>
+              <li data-category="trade_parameters" data-tip-title="Trade Parameters" data-tip-example="stake=1.00, contract=DIGITUNDER"><span class="builder-cat-dot"></span><span class="builder-cat-label">Trade parameters</span></li>
+              <li data-category="purchase_conditions" data-tip-title="Purchase Conditions" data-tip-example="if last digit repeats 3 times"><span class="builder-cat-dot"></span><span class="builder-cat-label">Purchase conditions</span></li>
+              <li data-category="sell_conditions" data-tip-title="Sell Conditions" data-tip-example="stop if loss threshold reached"><span class="builder-cat-dot"></span><span class="builder-cat-label">Sell conditions (optional)</span></li>
+              <li data-category="restart_conditions" data-tip-title="Restart Trading Conditions" data-tip-example="restart after stat reset"><span class="builder-cat-dot"></span><span class="builder-cat-label">Restart trading conditions</span></li>
+              <li class="builder-palette-section" data-section-toggle="analysisExtras"><span class="builder-cat-label">Analysis</span><span class="builder-cat-chevron">⌄</span></li>
+              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="analysis" data-tip-title="Analysis" data-tip-example="rsi < 30, trend = bullish"><span class="builder-cat-dot"></span><span class="builder-cat-label">Analysis</span></li>
+              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="utility" data-tip-title="Utility" data-tip-example="group and route logic"><span class="builder-cat-dot"></span><span class="builder-cat-label">Utility</span></li>
+              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="virtual_hook_switcher" data-tip-title="Virtual Hook Switcher" data-tip-example="switch hook path before entry"><span class="builder-cat-dot"></span><span class="builder-cat-label">Virtual Hook Switcher</span></li>
+              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="binarytools" data-tip-title="Binarytools" data-tip-example="binary contract helper"><span class="builder-cat-dot"></span><span class="builder-cat-label">Binarytools</span></li>
+              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="contract_modifiers" data-tip-title="Contract Modifiers" data-tip-example="update stake and limits"><span class="builder-cat-dot"></span><span class="builder-cat-label">Contract modifiers</span></li>
+            </ul>
+            <div class="builder-category-tooltip hidden" id="builderCategoryTooltip"></div>
+          </aside>
+
+          <div class="builder-center" id="builderCenterPane">
+            <div class="builder-toolbar" role="toolbar" aria-label="Workspace tools">
+              <button type="button" class="builder-icon-btn" id="builderCollapseSidebarBtn" title="Collapse sidebar">☰</button>
+              <button type="button" class="builder-icon-btn" id="builderSearchReplaceBtn" title="Search and replace">⌕</button>
+              <button type="button" class="builder-icon-btn" id="builderGlobalsBtn" title="Global variables">⌘</button>
+              <span class="builder-toolbar-sep" aria-hidden="true"></span>
+              <button type="button" class="builder-icon-btn" id="builderSnapToggleBtn" title="Snap to grid">⌗</button>
+              <button type="button" class="builder-icon-btn" id="builderCleanBtn" title="Clean up blocks">⇅</button>
+              <button type="button" class="builder-icon-btn" id="builderResetBtn" title="Reset workspace to default layout">↺</button>
+              <button type="button" class="builder-icon-btn" id="builderCanvasDarkModeBtn" title="Canvas dark mode">◐</button>
+              <span class="builder-toolbar-sep" aria-hidden="true"></span>
+              <button type="button" class="builder-icon-btn" id="builderZoomOutBtn" title="Zoom out">−</button>
+              <button type="button" class="builder-icon-btn" id="builderZoomInBtn" title="Zoom in">＋</button>
+              <button type="button" class="builder-icon-btn" id="builderFitBtn" title="Fit to view">⛶</button>
+              <span class="builder-toolbar-sep" aria-hidden="true"></span>
+              <button type="button" class="builder-icon-btn" id="loadStrategyBtn" title="Load strategy">⤒</button>
+              <button type="button" class="builder-icon-btn builder-tool-btn--primary" id="generateStrategyBtn" title="Save strategy">⤓</button>
+            </div>
+            <div id="blocklyDiv" class="builder-blockly-host"></div>
+            <button type="button" class="builder-floating-trash" id="builderFloatingTrash" aria-label="Trash zone">🗑</button>
+            <button type="button" class="builder-floating-ai" id="builderFloatingAi" aria-label="AI helper">AI</button>
+            <canvas id="builderMiniMap" class="builder-minimap" width="190" height="130" aria-label="Workspace minimap"></canvas>
+          </div>
+
+          <aside class="builder-run-panel" aria-label="Run and summary">
+            <button type="button" id="builderRunBtn" class="btn btn-run-teal btn-builder-run">Run bot</button>
+            <button type="button" id="builderStopBtn" class="btn btn-stop btn-builder-stop">Stop bot</button>
+            <p class="builder-bot-status subtle" id="builderBotStatus">Bot is not running</p>
+            <div class="builder-progress" aria-hidden="true">
+              <div class="builder-progress-fill" id="builderProgressFill"></div>
+            </div>
+            <div class="builder-run-tabs" role="tablist">
+              <button type="button" class="builder-run-tab builder-run-tab--active" data-tab="summary" role="tab" aria-selected="true">
+                Summary
+              </button>
+              <button type="button" class="builder-run-tab" data-tab="json" role="tab" aria-selected="false">JSON</button>
+              <button type="button" class="builder-run-tab" data-tab="journal" role="tab" aria-selected="false">Journal</button>
+            </div>
+            <div id="builderTabSummary" class="builder-tab-panel" role="tabpanel">
+              <dl class="builder-stats">
+                <div><dt>Total stake</dt><dd id="builderStatStake">—</dd></div>
+                <div><dt>Trades</dt><dd id="builderStatTrades">—</dd></div>
+                <div><dt>Profit</dt><dd id="builderStatProfit">— <canvas id="builderProfitSparkline" width="86" height="22"></canvas></dd></div>
+                <div><dt>Balance</dt><dd id="builderStatBalance">—</dd></div>
+              </dl>
+            </div>
+            <div id="builderTabJson" class="builder-tab-panel hidden" role="tabpanel">
+              <pre id="strategyOutput" class="strategy-output strategy-output--panel">{}</pre>
+            </div>
+            <div id="builderTabJournal" class="builder-tab-panel hidden" role="tabpanel">
+              <ul id="builderJournalList" class="builder-journal subtle small"></ul>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+    <div id="builderSearchReplaceModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Search and replace block parameters">
+      <div class="builder-modal-card">
+        <h3>Search & Replace Parameters</h3>
+        <label>Search<input id="builderSearchInput" type="text" placeholder="Find value" /></label>
+        <label>Replace<input id="builderReplaceInput" type="text" placeholder="Replace with" /></label>
+        <div class="button-row">
+          <button type="button" class="btn btn-blue" id="builderDoSearchReplaceBtn">Apply</button>
+          <button type="button" class="btn" id="builderCloseSearchReplaceBtn">Close</button>
+        </div>
+      </div>
+    </div>
+    <div id="builderGlobalsModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Global variables manager">
+      <div class="builder-modal-card">
+        <h3>Global Variables</h3>
+        <p class="subtle small">One variable per line: <code>name=value</code></p>
+        <textarea id="builderGlobalsText" class="builder-globals-text"></textarea>
+        <div class="button-row">
+          <button type="button" class="btn btn-blue" id="builderSaveGlobalsBtn">Save globals</button>
+          <button type="button" class="btn" id="builderCloseGlobalsBtn">Close</button>
+        </div>
+      </div>
+    </div>
+    <div id="builderTourOverlay" class="builder-tour hidden">
+      <div id="builderTourCallout" class="builder-tour-callout"></div>
+    </div>
+    <div id="builderQuickModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Quick strategy wizard">
+      <div class="builder-modal-card builder-modal-card--xl">
+        <div class="builder-quick-shell">
+          <aside class="builder-quick-sidebar">
+            <div class="builder-quick-title-row">
+              <h3>Quick Strategy</h3>
+            </div>
+            <p class="subtle">Choose a template below and set your trade parameters.</p>
+            <div class="builder-quick-rail">
+              <div id="builderWizardStep1" class="builder-quick-rail-step builder-quick-rail-step--active">Strategy template</div>
+              <div id="builderWizardStep2" class="builder-quick-rail-step">Trade parameters</div>
+            </div>
+          </aside>
+          <section class="builder-quick-main">
+            <button type="button" class="builder-quick-close" id="builderQuickCloseBtn" aria-label="Close">×</button>
+            <div id="builderQuickStep1">
+              <div class="builder-quick-searchbar">
+                <input id="builderQuickSearch" type="search" class="builder-search-input" placeholder="Search" />
+              </div>
+              <div class="builder-quick-filters">
+                <button type="button" class="builder-quick-filter builder-quick-filter--active" data-filter="all">All</button>
+                <button type="button" class="builder-quick-filter" data-filter="accumulators">Accumulators</button>
+                <button type="button" class="builder-quick-filter" data-filter="options">Options</button>
+              </div>
+              <div class="builder-quick-group-title">Templates</div>
+              <div id="builderQuickTemplateList" class="builder-quick-template-list"></div>
+            </div>
+            <div id="builderQuickStep2" class="hidden">
+              <div class="form-grid two-col">
+                <label>Template<input id="builderQuickStrategyTypeLabel" type="text" readonly /></label>
+                <label>Stake<input id="builderQuickStake" type="number" min="0.35" step="0.01" value="1.00" /></label>
+                <label>Loss Threshold<input id="builderQuickLossThreshold" type="number" min="0" step="0.01" value="25" /></label>
+                <label>Profit Threshold<input id="builderQuickProfitThreshold" type="number" min="0" step="0.01" value="20" /></label>
+              </div>
+              <div class="form-grid two-col" style="margin-top: 12px">
+                <label>
+                  Market
+                  <select id="builderQuickMarket">
+                    <optgroup label="Volatility Indices">
+                      <option value="R_10">Volatility 10 Index</option>
+                      <option value="R_25">Volatility 25 Index</option>
+                      <option value="R_50">Volatility 50 Index</option>
+                      <option value="R_75">Volatility 75 Index</option>
+                      <option value="R_100" selected>Volatility 100 Index</option>
+                    </optgroup>
+                    <optgroup label="Volatility 1s Indices">
+                      <option value="1HZ10V">Volatility 10 (1s) Index</option>
+                      <option value="1HZ25V">Volatility 25 (1s) Index</option>
+                      <option value="1HZ50V">Volatility 50 (1s) Index</option>
+                      <option value="1HZ75V">Volatility 75 (1s) Index</option>
+                      <option value="1HZ100V">Volatility 100 (1s) Index</option>
+                    </optgroup>
+                    <optgroup label="Jump Indices">
+                      <option value="JD10">Jump 10 Index</option>
+                      <option value="JD25">Jump 25 Index</option>
+                      <option value="JD50">Jump 50 Index</option>
+                      <option value="JD75">Jump 75 Index</option>
+                      <option value="JD100">Jump 100 Index</option>
+                    </optgroup>
+                    <optgroup label="Crash / Boom">
+                      <option value="BOOM300N">Boom 300 Index</option>
+                      <option value="BOOM500">Boom 500 Index</option>
+                      <option value="BOOM600N">Boom 600 Index</option>
+                      <option value="BOOM900N">Boom 900 Index</option>
+                      <option value="BOOM1000">Boom 1000 Index</option>
+                      <option value="CRASH300N">Crash 300 Index</option>
+                      <option value="CRASH500">Crash 500 Index</option>
+                      <option value="CRASH600N">Crash 600 Index</option>
+                      <option value="CRASH900N">Crash 900 Index</option>
+                      <option value="CRASH1000">Crash 1000 Index</option>
+                    </optgroup>
+                    <optgroup label="Step / Drift Switch">
+                      <option value="STPRNG">Step Index</option>
+                      <option value="DSI10">Drift Switch 10</option>
+                      <option value="DSI20">Drift Switch 20</option>
+                      <option value="DSI30">Drift Switch 30</option>
+                    </optgroup>
+                  </select>
+                </label>
+                <label>Contract<select id="builderQuickContract"><option value="DIGITUNDER">Digits Under</option><option value="DIGITOVER">Digits Over</option></select></label>
+              </div>
+              <p id="builderQuickValidationText" class="subtle small"></p>
+            </div>
+            <div class="button-row builder-quick-actions">
+              <button type="button" class="btn" id="builderQuickBackBtn">Back</button>
+              <button type="button" class="btn btn-blue" id="builderQuickNextBtn">Next</button>
+              <button type="button" class="btn btn-start hidden" id="builderQuickCreateBtn">Create</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="/static/blockly_config.js"></script>
+{% endblock %}

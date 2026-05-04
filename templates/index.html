@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deriv Trading Bot</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 700px;
+        margin: 40px auto;
+        padding: 0 16px;
+        background: #0d141f;
+        color: #e8edf3;
+      }
+      .row {
+        margin-bottom: 12px;
+      }
+      button {
+        margin-right: 8px;
+        padding: 8px 14px;
+        cursor: pointer;
+        border: none;
+        border-radius: 6px;
+        font-weight: bold;
+      }
+      #startBtn {
+        background: #ff444f;
+        color: #fff;
+      }
+      #stopBtn {
+        background: #222d3d;
+        color: #e8edf3;
+        border: 1px solid #39485f;
+      }
+      .card {
+        border: 1px solid #2b3a50;
+        border-radius: 8px;
+        padding: 16px;
+        background: #141d2b;
+      }
+      .label {
+        font-weight: bold;
+        color: #9fb0c7;
+      }
+      #running {
+        color: #ff444f;
+      }
+      .events {
+        margin-top: 16px;
+      }
+      #events {
+        margin: 0;
+        padding-left: 18px;
+        max-height: 180px;
+        overflow-y: auto;
+        color: #cfd8e6;
+      }
+      #events li {
+        margin-bottom: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Deriv Bot Control Panel</h1>
+
+    <div class="row">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn">Stop</button>
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="label">Bot status:</span> <span id="running">-</span></div>
+      <div class="row"><span class="label">Profit:</span> <span id="profit">0.00</span></div>
+      <div class="row"><span class="label">Current stake:</span> <span id="stake">0.00</span></div>
+      <div class="row"><span class="label">Loss streak:</span> <span id="lossStreak">0</span></div>
+      <div class="row"><span class="label">Last digits:</span> <span id="digits">[]</span></div>
+      <div class="row"><span class="label">Last result:</span> <span id="result">-</span></div>
+      <div class="events">
+        <div class="label">Trade events:</div>
+        <ul id="events"></ul>
+      </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+  </body>
+</html>

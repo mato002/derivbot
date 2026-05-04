@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% set active_nav = 'dashboard' %}
+{% block body_class %}has-bottom-bar{% endblock %}
+{% block title %}Dashboard — Deriv Platform{% endblock %}
+{% block extra_head %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+{% block content %}
+    <div class="page-inner page-inner--dash">
+      <header class="topbar card card--hero">
+        <div class="topbar__head">
+          <div class="topbar__titles">
+            <h1>Dashboard</h1>
+            <p class="subtle">Volatility 100 digit bot, balance, and history</p>
+          </div>
+          <div class="topbar__auth-btns">
+            <div id="profileMenuWrap" class="profile-menu hidden">
+              <button id="profileMenuBtn" type="button" class="btn btn-blue profile-menu__trigger">
+                Account
+              </button>
+              <div id="profileMenuDropdown" class="profile-menu__dropdown hidden">
+                <div id="profileMenuCurrent" class="profile-menu__current">Not logged in</div>
+                <div id="profileMenuAccounts" class="profile-menu__accounts"></div>
+                <button id="logoutDerivMenuBtn" type="button" class="btn btn-stop profile-menu__logout">Logout</button>
+              </div>
+            </div>
+            <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+          </div>
+        </div>
+        <div class="topbar__sub">
+          <div class="auth-panel auth-panel--dash-line">
+            <span id="authAccount" class="subtle">Not logged in</span>
+            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
+          </div>
+          <div class="top-metrics">
+          <div class="metric">
+            <span>Balance</span>
+            <strong id="balance">$0.00</strong>
+          </div>
+          <div class="metric">
+            <span>Profit</span>
+            <strong id="profit">$0.00</strong>
+          </div>
+          <div class="metric">
+            <span>Status</span>
+            <strong id="statusBadge" class="badge stopped">Stopped</strong>
+          </div>
+        </div>
+        </div>
+      </header>
+
+      <div id="hybridBanner" class="card hybrid-banner hidden"></div>
+      <section class="card diagnostics-card">
+        <div class="diagnostics-head">
+          <h2>Startup diagnostics</h2>
+          <button type="button" id="refreshDiagnosticsBtn" class="btn btn-blue btn-sm">Refresh</button>
+        </div>
+        <div class="diagnostics-grid">
+          <div class="diag-item"><span>OAuth client</span><strong id="diagOauthClient">--</strong></div>
+          <div class="diag-item"><span>WS app id</span><strong id="diagWsAppId">--</strong></div>
+          <div class="diag-item"><span>Login state</span><strong id="diagLoginState">--</strong></div>
+          <div class="diag-item"><span>Market data</span><strong id="diagMarketData">--</strong></div>
+        </div>
+        <p id="diagDetail" class="subtle small"></p>
+      </section>
+
+      <main class="grid grid--dash">
+        <section class="card control-panel-card">
+          <h2>Control Panel</h2>
+          <div class="button-row control-panel-run-row">
+            <button id="startBtn" class="btn btn-start">Start Bot</button>
+            <button id="stopBtn" class="btn btn-stop">Stop Bot</button>
+          </div>
+          <p class="subtle small">Uses <code>/start-bot</code> / <code>/stop-bot</code> (legacy <code>/start</code> still works).</p>
+          <div class="form-grid control-panel-grid">
+            <label>
+              Stake
+              <input id="stakeInput" type="number" step="0.01" min="0.01" />
+            </label>
+            <label>
+              Take Profit
+              <input id="takeProfitInput" type="number" step="0.01" min="0.01" />
+            </label>
+            <label>
+              Stop Loss
+              <input id="stopLossInput" type="number" step="0.01" />
+            </label>
+          </div>
+          <div class="form-grid control-panel-grid" style="margin-top: 10px">
+            <label>
+              Active strategy
+              <select id="dashStrategyAction">
+                <option value="over_under">Over / Under</option>
+                <option value="rise_fall">Rise / Fall</option>
+              </select>
+            </label>
+            <label>
+              Threshold
+              <input id="dashStrategyThreshold" type="number" step="1" min="0" max="9" />
+            </label>
+            <label>
+              True side
+              <select id="dashStrategyTrue"></select>
+            </label>
+            <label>
+              False side
+              <select id="dashStrategyFalse"></select>
+            </label>
+          </div>
+          <div class="control-panel-actions">
+            <button id="saveStrategyModeBtn" class="btn btn-blue" style="margin-top: 10px">Save Strategy Mode</button>
+            <button id="saveSettingsBtn" class="btn btn-blue">Save Settings</button>
+          </div>
+          <p class="subtle small" style="margin-top: 12px">
+            <a href="/strategies">Strategies</a> (confluence filters) ·
+            <a href="/manual-trader">Manual trader</a>
+          </p>
+        </section>
+
+        <section class="card">
+          <h2>Live Data</h2>
+          <div class="live-row">
+            <span>Active trades</span>
+            <strong id="activeTrades">0</strong>
+          </div>
+          <div class="live-row">
+            <span>Current Stake</span>
+            <strong id="liveStake">0.00</strong>
+          </div>
+          <div class="live-row">
+            <span>Last Digits</span>
+            <strong id="lastDigits">[]</strong>
+          </div>
+          <div class="live-row">
+            <span>Last Result</span>
+            <strong id="lastResult">-</strong>
+          </div>
+          <div class="live-row">
+            <span>Trades Count</span>
+            <strong id="tradesCount">0</strong>
+          </div>
+          <div class="events">
+            <h3>Events</h3>
+            <ul id="eventsList"></ul>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Profit Chart</h2>
+          <canvas id="profitChart"></canvas>
+        </section>
+
+        <section class="card full-width">
+          <h2>Trade History (Last 20)</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Source</th>
+                  <th>Digit</th>
+                  <th>Result</th>
+                  <th>Profit</th>
+                </tr>
+              </thead>
+              <tbody id="historyBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <button type="button" class="risk-strip" id="riskDisclaimerBtn">Risk disclaimer</button>
+    </div>
+{% endblock %}
+
+{% block app_footer %}
+    <footer class="app-bottom-bar">
+      <button type="button" class="app-bottom-info" id="bottomInfoBtn" aria-label="Information">i</button>
+      <button type="button" id="mobileRunBtn" class="btn-run-teal">
+        <span class="play-tri" aria-hidden="true">▶</span>
+        <span id="mobileRunLabel">Run</span>
+      </button>
+      <div class="app-bottom-status">
+        <span id="mobileRunStatus">Bot is not running</span>
+        <div class="app-bottom-progress">
+          <div class="app-bottom-progress-fill" id="mobileRunProgress"></div>
+        </div>
+      </div>
+    </footer>
+{% endblock %}

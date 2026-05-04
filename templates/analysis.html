@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set active_nav = 'analysis' %}
+{% block title %}Analysis — Deriv Platform{% endblock %}
+{% block extra_head %}
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+{% endblock %}
+{% block content %}
+    <div class="page-inner">
+      <header class="topbar card">
+        <div>
+          <h1>Charts / Analysis</h1>
+          <p class="subtle">Live series from Deriv ticks + RSI(14) + MA(20)</p>
+        </div>
+        <div class="auth-panel">
+          <span id="authAccount" class="subtle">Not logged in</span>
+          <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+          <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+        </div>
+      </header>
+
+      <section class="card">
+        <div class="toolbar">
+          <div class="analysis-market-control">
+            <div class="subtle small">Symbol</div>
+            <button id="analysisMarketPickerToggle" type="button" class="market-picker-toggle">Markets</button>
+            <strong id="analysisCurrentSymbol">Volatility 100 Index</strong>
+            <button id="analysisMarketPickerClose" type="button" class="market-picker-close hidden" aria-label="Close markets">✕</button>
+            <select id="analysisSymbol" class="hidden"></select>
+            <div id="analysisMarketPickerOverlay" class="market-picker-overlay hidden">
+              <div id="analysisMarketPickerCategories" class="market-picker-left"></div>
+              <div class="market-picker-right">
+                <div class="market-picker-search">
+                  <input id="analysisMarketSearchInput" type="search" placeholder="Search..." />
+                </div>
+                <div id="analysisMarketPickerList" class="market-picker-list"></div>
+              </div>
+            </div>
+          </div>
+          <label>
+            Timeframe
+            <select id="analysisTimeframe">
+              <option value="tick">Tick</option>
+              <option value="1s">1s</option>
+              <option value="5s">5s</option>
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+            </select>
+          </label>
+        </div>
+        <div class="analysis-layout">
+          <div class="analysis-center">
+            <div class="analysis-stats" id="analysisStats"></div>
+            <div id="priceChart" class="tv-chart analysis-main-chart"></div>
+            <div id="rsiChart" class="tv-chart tv-chart-small analysis-rsi-chart"></div>
+          </div>
+          <aside class="analysis-side card">
+            <h3>Last Signal</h3>
+            <div class="analysis-signal-grid">
+              <div class="subtle">Signal</div>
+              <div id="signalValue">-</div>
+              <div class="subtle">Reason</div>
+              <div id="signalReason">-</div>
+              <div class="subtle">Trend</div>
+              <div id="signalTrend">-</div>
+              <div class="subtle">Stream</div>
+              <div id="signalStream">Connecting...</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="/static/candles.js"></script>
+    <script src="/static/indicators.js"></script>
+    <script src="/static/websocket.js"></script>
+    <script src="/static/chart.js"></script>
+    <script src="/static/ui.js"></script>
+{% endblock %}

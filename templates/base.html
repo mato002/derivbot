@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Deriv Platform{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="platform-body theme-light {% block body_class %}{% endblock %}">
+    <script>
+      (function () {
+        try {
+          if (sessionStorage.getItem("derivbot_preloader_v1")) {
+            document.documentElement.classList.add("no-app-preloader");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <div
+      id="appPreloader"
+      class="app-preloader"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-labelledby="preloaderTitle"
+    >
+      <div class="app-preloader__bg" aria-hidden="true"></div>
+      <div class="app-preloader__glow" aria-hidden="true"></div>
+      <div class="app-preloader__particles" aria-hidden="true"></div>
+      <div class="app-preloader__panel">
+        <h1 id="preloaderTitle" class="app-preloader__logo">EPICSTRADERS</h1>
+        <p class="app-preloader__welcome">
+          Welcome to <strong class="app-preloader__brand">Epicstraders</strong>. Trade Smarter. Trade Faster. Trade
+          Deriv binary options like a pro.
+        </p>
+        <div class="app-preloader__track" aria-hidden="true">
+          <div id="preloaderBarFill" class="app-preloader__bar" style="width: 0%"></div>
+        </div>
+        <div id="preloaderPct" class="app-preloader__pct">0%</div>
+        <p class="app-preloader__copy">© 2026 Epicstraders. All rights reserved.</p>
+      </div>
+    </div>
+    <div id="sidebarScrim" class="sidebar-scrim hidden" aria-hidden="true"></div>
+
+    <header class="mobile-app-header">
+      <button type="button" id="mobileMenuBtn" class="icon-btn" aria-label="Open menu" aria-expanded="false">
+        <span class="icon-btn__bars"></span>
+      </button>
+      <a
+        href="https://app.deriv.com/cashier/deposit"
+        class="btn-deposit"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Deposit</a
+      >
+      <button type="button" class="wallet-chip" id="headerWalletBtn" aria-haspopup="menu" aria-expanded="false">
+        <span class="wallet-chip__logo" aria-hidden="true">D</span>
+        <span id="headerWalletBalance" class="wallet-chip__amt">--</span>
+        <span class="wallet-chevron" aria-hidden="true">▾</span>
+      </button>
+      <button id="headerWalletLoginBtn" class="btn btn-blue hidden" type="button">Login</button>
+      <div id="headerWalletDropdown" class="header-wallet-menu hidden">
+        <div id="headerWalletCurrent" class="header-wallet-menu__current">Not logged in</div>
+        <div id="headerWalletAccounts" class="header-wallet-menu__accounts"></div>
+        <button id="headerWalletLogoutBtn" type="button" class="btn btn-stop header-wallet-menu__logout">Logout</button>
+      </div>
+    </header>
+
+    <nav class="tab-scroll" aria-label="Main">
+      <a href="/" class="tab-pill {% if active_nav == 'dashboard' %}tab-pill--active{% endif %}">Dashboard</a>
+      <a href="/manual-trader" class="tab-pill {% if active_nav == 'manual' %}tab-pill--active{% endif %}">Manual</a>
+      <a href="/strategies" class="tab-pill {% if active_nav == 'strategies' %}tab-pill--active{% endif %}">Strategies</a>
+      <a href="/builder" class="tab-pill {% if active_nav == 'builder' %}tab-pill--active{% endif %}">Bot Builder</a>
+      <a href="/analysis" class="tab-pill {% if active_nav == 'analysis' %}tab-pill--active{% endif %}">Charts</a>
+      <a href="/tradingview" class="tab-pill {% if active_nav == 'tradingview' %}tab-pill--active{% endif %}">TradingView</a>
+      <a href="/copy-trading" class="tab-pill {% if active_nav == 'copy' %}tab-pill--active{% endif %}">Copy</a>
+      <a
+        href="https://community.deriv.com/"
+        class="tab-pill tab-pill--external"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Tutorials</a
+      >
+    </nav>
+
+    <div class="platform-shell">
+      <aside class="sidebar" id="appSidebar" aria-label="Sidebar navigation">
+        <div class="sidebar-brand">Deriv Platform</div>
+        <nav class="sidebar-nav">
+          <a href="/" class="sidebar-link {% if active_nav == 'dashboard' %}active{% endif %}">Dashboard</a>
+          <a href="/manual-trader" class="sidebar-link {% if active_nav == 'manual' %}active{% endif %}">Manual Trader</a>
+          <a href="/strategies" class="sidebar-link {% if active_nav == 'strategies' %}active{% endif %}">Strategies</a>
+          <a href="/analysis" class="sidebar-link {% if active_nav == 'analysis' %}active{% endif %}">Charts / Analysis</a>
+          <a href="/tradingview" class="sidebar-link {% if active_nav == 'tradingview' %}active{% endif %}">TradingView</a>
+          <a href="/builder" class="sidebar-link {% if active_nav == 'builder' %}active{% endif %}">Bot Builder</a>
+          <a href="/copy-trading" class="sidebar-link {% if active_nav == 'copy' %}active{% endif %}">Copy Trading</a>
+        </nav>
+        <div class="sidebar-footer subtle">Hybrid manual + bot</div>
+      </aside>
+      <div class="platform-main" id="platformMain">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+
+    {% block app_footer %}{% endblock %}
+
+    <div id="tradeNotifyStack" class="trade-notify-stack" aria-live="polite"></div>
+    <div id="toast" class="toast hidden"></div>
+    {% block extra_scripts %}{% endblock %}
+    <script src="/static/platform.js"></script>
+    <script src="/static/script.js"></script>
+  </body>
+</html>

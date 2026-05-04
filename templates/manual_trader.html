@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% set active_nav = 'manual' %}
+{% block body_class %}manual-simple{% endblock %}
+{% block title %}Manual Trader — Deriv Platform{% endblock %}
+{% block extra_head %}
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+{% endblock %}
+{% block content %}
+    <div class="page-inner page-inner--dash">
+      <header class="topbar card card--hero">
+        <div class="topbar__head">
+          <div class="topbar__titles">
+            <h1>Manual Trader</h1>
+            <p class="subtle">Simple ticket: choose digit, set stake, tap Over/Under.</p>
+          </div>
+          <div class="topbar__auth-btns">
+            <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+          </div>
+        </div>
+        <div class="topbar__sub">
+          <div class="auth-panel auth-panel--dash-line">
+            <span id="authAccount" class="subtle">Not logged in</span>
+            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
+          </div>
+          <p class="subtle small topbar__sub-note">
+            <a href="/">Dashboard</a> — start/stop bot and full history
+          </p>
+        </div>
+      </header>
+
+      <div id="hybridBanner" class="card hybrid-banner hidden"></div>
+
+      <main class="grid grid--dash manual-grid">
+        <section class="card manual-market-card">
+          <h2>Market context</h2>
+          <div class="manual-market-head">
+            <div>
+              <div class="subtle small">Live tick</div>
+              <strong id="liveTickPriceStrong">--</strong>
+            </div>
+            <div>
+              <div class="subtle small">Trend</div>
+              <strong id="manualTrend">Sideways</strong>
+            </div>
+            <div>
+              <div class="subtle small">Volatility</div>
+              <strong id="manualVolatility">--</strong>
+            </div>
+          </div>
+          <div id="manualPriceChart" class="tv-chart manual-chart"></div>
+          <div class="subtle small manual-indicators">
+            MA(20): <strong id="manualMa">--</strong> · RSI(14): <strong id="manualRsi">--</strong>
+          </div>
+        </section>
+
+        <section class="card card--manual manual-trade-card">
+          <h2>Place trade</h2>
+          <div class="manual-account-state">
+            <span class="subtle small">Account:</span>
+            <strong id="manualAccountState">Not logged in</strong>
+          </div>
+          <div class="trade-type-row">
+            <span class="trade-type-label">Over / Under</span>
+            <div class="ou-toggle" role="group" aria-label="Contract type">
+              <button
+                type="button"
+                class="ou-btn ou-btn--over"
+                data-contract="DIGITOVER"
+                id="ouOverBtn"
+                title="OVER wins if the last digit is strictly greater than your selected barrier."
+              >
+                Over
+              </button>
+              <button
+                type="button"
+                class="ou-btn ou-btn--under"
+                data-contract="DIGITUNDER"
+                id="ouUnderBtn"
+                title="UNDER wins if the last digit is strictly lower than your selected barrier."
+              >
+                Under
+              </button>
+            </div>
+            <select id="manualContract" class="visually-hidden" aria-hidden="true" tabindex="-1">
+              <option value="DIGITOVER">DIGITOVER</option>
+              <option value="DIGITUNDER">DIGITUNDER</option>
+            </select>
+          </div>
+          <div class="digit-pred-head">
+            <p class="subtle small barrier-label" title="Barrier digit is the reference digit (0–9) used by Over/Under.">
+              Last digit prediction
+            </p>
+            <label class="digit-sample-label subtle small">
+              Sample
+              <select id="digitPredictionSample">
+                <option value="60">60 ticks</option>
+                <option value="120" selected>120 ticks</option>
+                <option value="240">240 ticks</option>
+              </select>
+            </label>
+          </div>
+          <div class="digit-live-row subtle small">
+            Live tick: <strong id="liveTickDigit">--</strong>
+            <span id="liveTickPrice" class="digit-live-price"></span>
+          </div>
+          <div class="digit-grid-wrap">
+            <div id="digitPointer" class="digit-pointer hidden" aria-hidden="true">▼</div>
+            <div class="digit-grid" id="digitGrid" role="group" aria-label="Barrier digit 0–9">
+              {% for d in range(10) %}
+              <button type="button" class="digit-cell" data-digit="{{ d }}">{{ d }}</button>
+              {% endfor %}
+            </div>
+          </div>
+          <label class="stake-row-label">
+            Stake (USD)
+            <input id="manualStake" type="number" step="0.01" min="0.01" value="1" />
+          </label>
+          <div class="quick-stakes" role="group" aria-label="Quick stake buttons">
+            <button type="button" class="quick-stake-btn" data-stake="1">$1</button>
+            <button type="button" class="quick-stake-btn" data-stake="5">$5</button>
+            <button type="button" class="quick-stake-btn" data-stake="10">$10</button>
+            <button type="button" class="quick-stake-btn" data-stake="25">$25</button>
+          </div>
+          <input type="hidden" id="manualBarrier" value="5" />
+          <button id="manualTradeBtn" class="btn btn-teal btn-trade-wide">Place selected side now</button>
+          <p class="subtle small">One-tap mode: click <code>Over</code> or <code>Under</code> to place instantly. Shortcuts: <code>O</code>/<code>U</code> select side, <code>Enter</code> places selected side.</p>
+        </section>
+      </main>
+      <div class="manual-pane-nav" aria-label="Manual view switch">
+        <button type="button" class="digit-shift-btn" id="paneToTrade" aria-label="Show trade ticket">≪</button>
+        <button type="button" class="digit-shift-btn" id="paneToChart" aria-label="Show chart">≫</button>
+      </div>
+    </div>
+{% endblock %}

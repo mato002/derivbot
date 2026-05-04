@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% set active_nav = 'strategies' %}
+{% block title %}Strategies — Deriv Platform{% endblock %}
+{% block content %}
+    <div class="page-inner page-inner--dash">
+      <header class="topbar card card--hero">
+        <div class="topbar__head">
+          <div class="topbar__titles">
+            <h1>Strategies</h1>
+            <p class="subtle">Confluence filters for digit Over/Under (server-side).</p>
+          </div>
+          <div class="topbar__auth-btns">
+            <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+          </div>
+        </div>
+        <div class="topbar__sub">
+          <div class="auth-panel auth-panel--dash-line">
+            <span id="authAccount" class="subtle">Not logged in</span>
+            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
+          </div>
+          <p class="subtle small topbar__sub-note">
+            <a href="/">Dashboard</a> — bot control &amp; history
+          </p>
+        </div>
+      </header>
+
+      <main class="grid grid--dash">
+        <section class="card full-width">
+          <h2>Active strategy (independent)</h2>
+          <p class="subtle small">
+            Over/Under and Rise/Fall keep separate rules. Choose one active strategy to run; the other stays saved
+            but inactive.
+          </p>
+          <div class="form-grid">
+            <label>
+              Active strategy
+              <select id="stratActionSelect">
+                <option value="over_under">Over / Under</option>
+                <option value="rise_fall">Rise / Fall</option>
+              </select>
+            </label>
+            <label>
+              If digit &gt;= threshold
+              <input id="stratThresholdInput" type="number" step="1" min="0" max="9" />
+            </label>
+            <label>
+              Trade when condition is true
+              <select id="stratTrueSelect"></select>
+            </label>
+            <label>
+              Trade when condition is false
+              <select id="stratFalseSelect"></select>
+            </label>
+          </div>
+          <button type="button" id="stratSaveBtn" class="btn btn-blue">Save active strategy</button>
+          <p id="confluenceScopeNote" class="subtle small" style="margin-top: 8px"></p>
+        </section>
+
+        <section class="card full-width card--confluence">
+          <h2>Strategy confluence (Over / Under)</h2>
+          <p class="subtle small">
+            Server-side engine gates digit signals: trend, S/R, RSI, candles, range. Requires score ≥ 5 and ≥ 2
+            independent modules (see <code>modules/over_under_strategy_engine.py</code>).
+          </p>
+          <div class="conf-live">
+            <div>
+              <span class="subtle">Active mode</span>
+              <strong id="confMarketMode">—</strong>
+            </div>
+            <div>
+              <span class="subtle">Last signal</span>
+              <strong id="confSignal">—</strong>
+            </div>
+            <div>
+              <span class="subtle">Confidence</span>
+              <div class="conf-meter-wrap" aria-hidden="true">
+                <div id="confMeterFill" class="conf-meter-fill"></div>
+              </div>
+              <strong id="confConfidence">0</strong>%
+            </div>
+            <div>
+              <span class="subtle">Entry</span>
+              <strong id="confEntry">—</strong>
+            </div>
+          </div>
+          <ul id="confReasons" class="conf-reasons subtle small"></ul>
+          <fieldset class="conf-toggles">
+            <legend class="subtle small">Modules (save to apply)</legend>
+            <label class="conf-check"><input type="checkbox" id="confEnabled" /> Confluence master</label>
+            <label class="conf-check"><input type="checkbox" id="confTrend" /> Trend filter</label>
+            <label class="conf-check"><input type="checkbox" id="confSr" /> Support / resistance</label>
+            <label class="conf-check"><input type="checkbox" id="confRsi" /> RSI filter</label>
+            <label class="conf-check"><input type="checkbox" id="confCandle" /> Candle confirmation</label>
+            <label class="conf-check"><input type="checkbox" id="confRange" /> Range detector</label>
+          </fieldset>
+          <button type="button" id="confSaveBtn" class="btn btn-blue">Save confluence settings</button>
+        </section>
+      </main>
+    </div>
+{% endblock %}
