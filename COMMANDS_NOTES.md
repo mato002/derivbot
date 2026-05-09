@@ -48,6 +48,16 @@ Use **API Token** in the header (modal) or open the manual login page:
 http://127.0.0.1:8000/auth/deriv/manual
 ```
 
+## Deploy (Render) — OAuth redirect URL
+
+Register this on your Deriv OAuth application:
+
+```text
+https://derivbot-438o.onrender.com/auth/deriv/callback
+```
+
+Optional: set Render env `DERIV_OAUTH_REDIRECT_URI` to override `config.py`.
+
 ## Verify app is responding
 
 ```powershell
