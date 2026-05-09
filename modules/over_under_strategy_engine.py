@@ -138,6 +138,8 @@ def run_confluence(
     symbol: str,
     base_side: Side,
     confluence: Dict[str, Any],
+    *,
+    account_id: str | None = None,
 ) -> Dict[str, Any]:
     """
     Evaluate confluence for the proposed digit Over/Under side (base_side).
@@ -180,7 +182,9 @@ def run_confluence(
 
     reasons: List[str] = []
     try:
-        raw = fetch_ticks_history(api_token, symbol, count=int(cfg["history_ticks"]))
+        raw = fetch_ticks_history(
+            api_token, symbol, count=int(cfg["history_ticks"]), account_id=account_id
+        )
     except Exception as exc:
         logger.warning("confluence: tick history failed: %s", exc)
         return {

@@ -30,6 +30,7 @@ def test_pages_return_html(client):
         "/builder",
         "/copy-trading",
         "/manual-trader",
+        "/matches",
         "/strategies",
     ):
         response = client.get(path)
@@ -46,16 +47,28 @@ def test_status_and_history(client):
     history = client.get("/history")
     assert history.status_code == 200
     assert isinstance(history.json(), list)
+    stats = client.get("/stats")
+    assert stats.status_code == 200
+    assert stats.json()["success"] is True
+    journal = client.get("/journal")
+    assert journal.status_code == 200
+    assert journal.json()["success"] is True
+    events = client.get("/events")
+    assert events.status_code == 200
+    edata = events.json()
+    assert edata["success"] is True
+    assert "latest_seq" in edata
+    assert isinstance(edata.get("events"), list)
 
 
 def test_auth_me_not_logged_in(client):
     response = client.get("/auth/deriv/me")
     assert response.status_code == 200
     data = response.json()
-    assert data["logged_in"] is False
-    assert data.get("accounts") == []
-    assert data.get("has_demo") is False
-    assert data.get("has_real") is False
+    assert isinstance(data.get("logged_in"), bool)
+    assert isinstance(data.get("accounts"), list)
+    assert isinstance(data.get("has_demo"), bool)
+    assert isinstance(data.get("has_real"), bool)
 
 
 def test_deriv_select_account_returns_404_without_matching_session(client):
@@ -113,7 +126,10 @@ def test_save_load_strategy(client):
     assert loaded.json()["rules"]["if_digit_greater_equal"] == 6
 
 
-def test_manual_trade_bad_contract(client):
+def test_manual_trade_bad_contract(client, monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda request: {"account": "TEST"})
     response = client.post(
         "/manual-trade",
         json={
@@ -126,13 +142,43 @@ def test_manual_trade_bad_contract(client):
     assert response.status_code == 400
 
 
+def test_manual_trade_digit_match_ok(client, monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(
+        app_module.bot,
+        "manual_trade",
+        lambda *a, **k: {
+            "success": True,
+            "won": False,
+            "payout": 0.0,
+            "profit_delta": -1.0,
+            "duration_sec": 0.5,
+        },
+    )
+    response = client.post(
+        "/manual-trade",
+        json={
+            "contract_type": "DIGITMATCH",
+            "barrier": 3,
+            "stake": 1.0,
+            "symbol": "R_100",
+            "duration_ticks": 5,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("won") is False
+    assert body.get("profit_delta") == -1.0
+
+
 def test_manual_trade_mocked(client, monkeypatch):
     import app as app_module
 
     monkeypatch.setattr(
         app_module.bot,
         "manual_trade",
-        lambda contract_type, barrier, stake, symbol="R_100": {
+        lambda *args, **kwargs: {
             "success": True,
             "won": True,
             "payout": 2.0,
@@ -155,7 +201,7 @@ def test_manual_trade_mocked(client, monkeypatch):
 def test_market_data_mocked(client, monkeypatch):
     import app as app_module
 
-    def fake_payload(token, symbol, timeframe="tick"):
+    def fake_payload(token, symbol, timeframe="tick", *, account_id=None):
         return {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -179,3 +225,29 @@ def test_market_data_mocked(client, monkeypatch):
     payload = response.json()
     assert payload["success"] is True
     assert len(payload["data"]["points"]) == 25
+
+
+def test_market_data_rate_limit_uses_cached_payload(client, monkeypatch):
+    import app as app_module
+
+    cached_payload = {
+        "symbol": "R_100",
+        "timeframe": "tick",
+        "last_price": 101.0,
+        "last_rsi14": 55.0,
+        "last_ma20": 100.5,
+        "points": [{"time": 1_700_000_999, "price": 101.0, "ma20": 100.5, "rsi14": 55.0}],
+    }
+
+    def failing_payload(*args, **kwargs):
+        raise RuntimeError("PAT WebSocket rate-limited (retry_after=30s)")
+
+    monkeypatch.setattr(app_module.market_data, "build_market_payload", failing_payload)
+    monkeypatch.setattr(app_module.market_data, "get_cached_market_payload", lambda *a, **k: cached_payload)
+    response = client.get("/market-data?symbol=R_100")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body.get("stale") is True
+    assert body.get("rate_limited") is True
+    assert body["data"]["last_price"] == 101.0

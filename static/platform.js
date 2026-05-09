@@ -1,4 +1,4 @@
-/** Epicstraders-style first-load splash (once per tab session). */
+/** Matechtraders first-load splash (once per tab session). */
 (function () {
   var root = document.getElementById("appPreloader");
   if (!root) return;
@@ -20,7 +20,7 @@
 
   function finish() {
     try {
-      sessionStorage.setItem("derivbot_preloader_v1", "1");
+      sessionStorage.setItem("matechtraders_preloader_v1", "1");
     } catch (e) {}
     document.body.classList.remove("is-preloading");
     root.classList.add("app-preloader--exit");

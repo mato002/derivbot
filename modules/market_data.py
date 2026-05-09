@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time as time_module
+from threading import Lock
 from typing import Any, Dict, List, Sequence
 
 import websocket
@@ -12,6 +13,9 @@ import websocket
 from modules.deriv_auth import open_ws_for_token
 
 logger = logging.getLogger(__name__)
+_MARKET_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
+_MARKET_CACHE_LOCK = Lock()
+_MARKET_CACHE_TTL_SEC = 90.0
 
 
 def _sma(values: Sequence[float], period: int) -> List[float | None]:
@@ -46,9 +50,13 @@ def _rsi(closes: Sequence[float], period: int = 14) -> List[float | None]:
     return out
 
 
-def fetch_ticks_history(api_token: str, symbol: str, count: int = 120) -> List[Dict[str, Any]]:
+def fetch_ticks_history(
+    api_token: str, symbol: str, count: int = 120, *, account_id: str | None = None
+) -> List[Dict[str, Any]]:
     """Pull recent ticks via Deriv WebSocket ticks_history."""
-    ws, requires_authorize, _account_hint = open_ws_for_token(api_token, timeout=20)
+    ws, requires_authorize, _account_hint = open_ws_for_token(
+        api_token, timeout=20, account_id=account_id
+    )
     ticks: List[Dict[str, Any]] = []
     try:
         if requires_authorize:
@@ -102,11 +110,17 @@ def fetch_ticks_history(api_token: str, symbol: str, count: int = 120) -> List[D
     return ticks
 
 
-def build_market_payload(api_token: str, symbol: str, timeframe: str = "tick") -> Dict[str, Any]:
+def build_market_payload(
+    api_token: str,
+    symbol: str,
+    timeframe: str = "tick",
+    *,
+    account_id: str | None = None,
+) -> Dict[str, Any]:
     """
     timeframe: reserved for future OHLC aggregation; currently tick-based series.
     """
-    raw = fetch_ticks_history(api_token, symbol, count=150)
+    raw = fetch_ticks_history(api_token, symbol, count=150, account_id=account_id)
     prices = [t["price"] for t in raw]
     ma20 = _sma(prices, 20)
     rsi14 = _rsi(prices, 14)
@@ -134,7 +148,7 @@ def build_market_payload(api_token: str, symbol: str, timeframe: str = "tick") -
             }
         )
     last = series[-1] if series else {}
-    return {
+    payload = {
         "symbol": symbol,
         "timeframe": timeframe,
         "last_price": last.get("price"),
@@ -142,3 +156,19 @@ def build_market_payload(api_token: str, symbol: str, timeframe: str = "tick") -
         "last_ma20": last.get("ma20"),
         "points": series[-80:],  # trim for API payload
     }
+    cache_key = f"{symbol}::{timeframe}::{(account_id or '').strip() or '-'}"
+    with _MARKET_CACHE_LOCK:
+        _MARKET_CACHE[cache_key] = (time_module.monotonic(), payload)
+    return payload
+
+
+def get_cached_market_payload(symbol: str, timeframe: str = "tick", *, account_id: str | None = None) -> Dict[str, Any] | None:
+    cache_key = f"{symbol}::{timeframe}::{(account_id or '').strip() or '-'}"
+    with _MARKET_CACHE_LOCK:
+        cached = _MARKET_CACHE.get(cache_key)
+    if not cached:
+        return None
+    age = time_module.monotonic() - cached[0]
+    if age > _MARKET_CACHE_TTL_SEC:
+        return None
+    return dict(cached[1])

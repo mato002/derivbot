@@ -1,4 +1,5 @@
 const toastEl = document.getElementById("toast");
+let toastHideTimer = null;
 let lastSeenResult = "-";
 let profitChart;
 
@@ -39,25 +40,63 @@ function showTradeAlert(alert) {
   if (alert.kind === "closed") {
     const dur = Number(alert.duration_sec ?? NaN);
     const durText = Number.isFinite(dur) ? ` (${dur.toFixed(2)}s)` : "";
-    showToast(`${alert.title}: ${alert.body}${durText}`, 3200);
+    showToast(`${alert.title}: ${alert.body}${durText}`, 2400);
   }
   while (stack.children.length > 5) {
     stack.removeChild(stack.firstChild);
   }
-  window.setTimeout(removeEl, 6800);
+  window.setTimeout(removeEl, 5200);
 }
 
-function showToast(message, durationMs = 2300) {
+function showToast(message, durationMs = 2000) {
   if (!toastEl) return;
+  if (toastHideTimer) {
+    window.clearTimeout(toastHideTimer);
+    toastHideTimer = null;
+  }
   toastEl.textContent = message;
   toastEl.classList.remove("hidden");
-  window.setTimeout(() => toastEl.classList.add("hidden"), durationMs);
+  toastHideTimer = window.setTimeout(() => {
+    toastEl.classList.add("hidden");
+    toastHideTimer = null;
+  }, durationMs);
 }
 
 function setLoading(button, isLoading) {
   if (button) {
     button.disabled = isLoading;
   }
+}
+
+function initSectionTabs() {
+  const rows = document.querySelectorAll(".section-tabs");
+  rows.forEach((row) => {
+    const buttons = Array.from(row.querySelectorAll("button"));
+    if (!buttons.length) return;
+    buttons.forEach((btn, idx) => {
+      if (idx === 0) btn.classList.add("is-active");
+      btn.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+      });
+    });
+  });
+}
+
+function initThemeToggle() {
+  const btn = document.getElementById("themeToggleBtn");
+  if (!btn) return;
+  const key = "derivbot_theme_pref";
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved === "light") document.body.classList.add("trading-theme-light");
+  } catch (_e) {}
+  btn.addEventListener("click", () => {
+    const light = document.body.classList.toggle("trading-theme-light");
+    try {
+      localStorage.setItem(key, light ? "light" : "dark");
+    } catch (_e) {}
+  });
 }
 
 async function requestJson(url, options = {}) {
@@ -294,6 +333,7 @@ async function refreshAuthState() {
   if (accountSwitchInFlight) return;
   const authAccountEl = document.getElementById("authAccount");
   const derivAccountBalanceEl = document.getElementById("derivBalance");
+  const dashLoginStatusEl = document.getElementById("dashLoginStatus");
   const loginBtn = document.getElementById("loginDerivBtn");
   const chipEl = document.getElementById("headerWalletBalance");
 
@@ -324,6 +364,7 @@ async function refreshAuthState() {
       if (authAccountEl) {
         authAccountEl.textContent = `${account} ${currency} (${tag})`.trim();
       }
+      if (dashLoginStatusEl) dashLoginStatusEl.textContent = `${tag} account`;
       loginBtn.classList.add("hidden");
       try {
         const balanceData = await requestJson("/auth/deriv/balance");
@@ -350,6 +391,7 @@ async function refreshAuthState() {
       if (authAccountEl) {
         authAccountEl.textContent = "Not logged in";
       }
+      if (dashLoginStatusEl) dashLoginStatusEl.textContent = "Disconnected";
       loginBtn.classList.remove("hidden");
       headerWalletText = "--";
       if (derivAccountBalanceEl) {
@@ -364,6 +406,7 @@ async function refreshAuthState() {
     if (authAccountEl) {
       authAccountEl.textContent = "Auth unavailable";
     }
+    if (dashLoginStatusEl) dashLoginStatusEl.textContent = "Auth unavailable";
     headerWalletText = "--";
     if (derivAccountBalanceEl) {
       setDerivAccountMetric("Deriv balance: unavailable");
@@ -385,8 +428,14 @@ function initAuthButtons() {
   const onLogin = () => {
     window.location.href = "/auth/deriv/login";
   };
-  loginBtn?.addEventListener("click", onLogin);
-  headerLoginBtn?.addEventListener("click", onLogin);
+  if (loginBtn && !loginBtn.dataset.authBound) {
+    loginBtn.addEventListener("click", onLogin);
+    loginBtn.dataset.authBound = "1";
+  }
+  if (headerLoginBtn && !headerLoginBtn.dataset.authBound) {
+    headerLoginBtn.addEventListener("click", onLogin);
+    headerLoginBtn.dataset.authBound = "1";
+  }
 }
 
 function applyHybridBannerFromStatus(status) {
@@ -797,7 +846,11 @@ function wireManualTraderUi(onAfterAction) {
       manualRows.forEach((r) => {
         const tr = document.createElement("tr");
         const ct = Number(r.profit ?? 0) >= 0 ? "profit-positive" : "profit-negative";
-        const side = String(r.contract_type || "").toUpperCase() === "DIGITUNDER" ? "UNDER" : "OVER";
+        const rawCt = String(r.contract_type || "").toUpperCase();
+        let side;
+        if (rawCt === "DIGITMATCH") side = "MATCH";
+        else if (rawCt === "DIGITUNDER") side = "UNDER";
+        else side = "OVER";
         const type = `${side} ${r.digit ?? "-"}`;
         const stake = Number(r.stake ?? 0);
         tr.innerHTML = `<td>${r.timestamp ?? "-"}</td><td>${type}</td><td>${stake.toFixed(2)}</td><td>${r.result ?? "-"}</td><td class="${ct}">${Number(r.profit ?? 0).toFixed(2)}</td>`;
@@ -813,12 +866,13 @@ function wireManualTraderUi(onAfterAction) {
     if (manualSubmitting) return;
     showToast(
       `${manualContractEl.value === "DIGITUNDER" ? "Under" : "Over"} · barrier ${manualBarrierEl.value} · sending…`,
-      900,
+      800,
     );
     manualSubmitting = true;
     setLoading(manualBtn, true);
     setLoading(ouOverBtn, true);
     setLoading(ouUnderBtn, true);
+    let tradeOk = false;
     try {
       const payload = {
         contract_type: manualContractEl.value,
@@ -831,25 +885,35 @@ function wireManualTraderUi(onAfterAction) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      tradeOk = true;
       if (typeof res.won === "boolean") {
         const secs = Number(res.duration_sec ?? NaN);
         const secText = Number.isFinite(secs) ? ` in ${secs.toFixed(2)}s` : "";
         showToast(
           res.won
             ? `Win: +${Number(res.profit_delta ?? 0).toFixed(2)} USD${secText}`
-            : `Loss: ${Number(res.profit_delta ?? 0).toFixed(2)} USD${secText}`
+            : `Loss: ${Number(res.profit_delta ?? 0).toFixed(2)} USD${secText}`,
+          1800,
         );
       }
-      if (typeof onAfterAction === "function") await onAfterAction();
-      await refreshManualHistory();
-      await refreshQuote();
     } catch (error) {
-      showToast(`Manual trade failed: ${error.message}`);
+      showToast(`Manual trade failed: ${error.message}`, 2600);
     } finally {
       setLoading(manualBtn, false);
       setLoading(ouOverBtn, false);
       setLoading(ouUnderBtn, false);
       manualSubmitting = false;
+    }
+    if (tradeOk) {
+      const after = async () => {
+        try {
+          if (typeof onAfterAction === "function") await onAfterAction();
+          await Promise.all([refreshManualHistory(), refreshQuote()]);
+        } catch (_e) {
+          /* ignore */
+        }
+      };
+      void after();
     }
   }
 
@@ -1001,6 +1065,13 @@ function initDashboardPage() {
   const tradesCountEl = document.getElementById("tradesCount");
   const eventsListEl = document.getElementById("eventsList");
   const historyBodyEl = document.getElementById("historyBody");
+  const balanceMirrorEl = document.getElementById("balanceMirror");
+  const todayProfitEl = document.getElementById("todayProfit");
+  const todayLossEl = document.getElementById("todayLoss");
+  const netPlEl = document.getElementById("netPl");
+  const activeTradesMirrorEl = document.getElementById("activeTradesMirror");
+  const winRateCardEl = document.getElementById("winRateCard");
+  const botStatusCardEl = document.getElementById("botStatusCard");
 
   const startBtn = document.getElementById("startBtn");
   const stopBtn = document.getElementById("stopBtn");
@@ -1188,14 +1259,24 @@ function initDashboardPage() {
     tradesCountEl.textContent = String(status.trades_count ?? 0);
 
     const activeTradesEl = document.getElementById("activeTrades");
+    const activeTradeCount = String((status.active_trades ?? []).length);
     if (activeTradesEl) {
-      activeTradesEl.textContent = String((status.active_trades ?? []).length);
+      activeTradesEl.textContent = activeTradeCount;
     }
+    if (activeTradesMirrorEl) activeTradesMirrorEl.textContent = activeTradeCount;
     applyHybridBannerFromStatus(status);
 
     statusBadgeEl.textContent = running ? "Running" : "Stopped";
     statusBadgeEl.classList.toggle("running", running);
     statusBadgeEl.classList.toggle("stopped", !running);
+    if (botStatusCardEl) botStatusCardEl.textContent = running ? "Running" : "Stopped";
+    if (balanceMirrorEl) balanceMirrorEl.textContent = `$${effectiveBalance.toFixed(2)}`;
+    const net = Number(status.profit ?? 0);
+    const profitNow = net > 0 ? net : 0;
+    const lossNow = net < 0 ? Math.abs(net) : 0;
+    if (todayProfitEl) todayProfitEl.textContent = `$${profitNow.toFixed(2)}`;
+    if (todayLossEl) todayLossEl.textContent = `$${lossNow.toFixed(2)}`;
+    if (netPlEl) netPlEl.textContent = `$${net.toFixed(2)}`;
 
     eventsListEl.innerHTML = "";
     (status.events ?? []).forEach((eventText) => {
@@ -1234,6 +1315,15 @@ function initDashboardPage() {
       applyStatus(status, tradeAlertPollIndex === 0);
       tradeAlertPollIndex += 1;
       renderHistory(history);
+      if (winRateCardEl) {
+        const settled = history.filter((h) => {
+          const r = String(h.result || "").toLowerCase();
+          return r === "win" || r === "loss";
+        });
+        const wins = settled.filter((h) => String(h.result || "").toLowerCase() === "win").length;
+        const rate = settled.length ? (wins / settled.length) * 100 : 0;
+        winRateCardEl.textContent = `${rate.toFixed(1)}%`;
+      }
       updateChart(history);
       if (tradeAlertPollIndex % 15 === 0) {
         await refreshAuthState();
@@ -1683,6 +1773,37 @@ function initCopyPage() {
 
   refreshCopy();
   setInterval(refreshCopy, 2000);
+}
+
+function initTradingBotsPage() {
+  const runBtn = document.getElementById("tradingBotsRunBtn");
+  if (!runBtn) return;
+  const stopBtn = document.getElementById("tradingBotsStopBtn");
+  const statusEl = document.getElementById("tradingBotsRunStatus");
+  async function refreshStatus() {
+    try {
+      const status = await requestJson("/status");
+      const running = !!status.running;
+      if (statusEl) {
+        statusEl.textContent = running ? "Running" : "Not running";
+        statusEl.classList.toggle("status-pill--ok", running);
+        statusEl.classList.toggle("status-pill--danger", !running);
+      }
+    } catch (_e) {}
+  }
+  runBtn.addEventListener("click", async () => {
+    await requestJson("/start-bot", { method: "POST" });
+    await refreshStatus();
+  });
+  stopBtn?.addEventListener("click", async () => {
+    await requestJson("/stop-bot", { method: "POST" });
+    await refreshStatus();
+  });
+  initAuthButtons();
+  refreshAuthState();
+  refreshStatus();
+  setInterval(refreshStatus, 2000);
+  window.setInterval(refreshAuthState, 15000);
 }
 
 function initBuilderPage() {
@@ -2334,11 +2455,939 @@ function initBuilderPage() {
   window.setInterval(refreshAuthState, 15000);
 }
 
+function initMatchesPage() {
+  const buyBtn = document.getElementById("matchesBuyBtn");
+  if (!buyBtn) return;
+
+  const barrierEl = document.getElementById("matchesBarrier");
+  const stakeEl = document.getElementById("matchesStake");
+  const durationEl = document.getElementById("matchesDurationTicks");
+  const grid = document.getElementById("matchesDigitGrid");
+  const tickerStripEl = document.getElementById("matchesTickerStrip");
+  const tickerEl = document.getElementById("matchesTicker");
+  const previewEl = document.getElementById("matchesTickPreview");
+  const lastContractEl = document.getElementById("matchesLastContract");
+  const livePriceEl = document.getElementById("matchesLivePrice");
+  const liveDigitEl = document.getElementById("matchesLiveDigit");
+  const priceArrowEl = document.getElementById("matchesPriceArrow");
+  const pricePctEl = document.getElementById("matchesPricePct");
+  const digitArrowEl = document.getElementById("matchesDigitArrow");
+  const payoutEl = document.getElementById("matchesQuotePayout");
+  const askEl = document.getElementById("matchesQuoteAsk");
+  const accountStateEl = document.getElementById("matchesAccountState");
+  const pnlEl = document.getElementById("matchesSessionPnl");
+  const winRateEl = document.getElementById("matchesWinRate");
+  const streakEl = document.getElementById("matchesStreak");
+  const oppTitleEl = document.getElementById("matchesOpportunityTitle");
+  const oppTextEl = document.getElementById("matchesOpportunityText");
+  const oppBannerEl = document.getElementById("matchesOpportunityBanner");
+  const signalLabelEl = document.getElementById("matchesSignalLabel");
+  const signalDetailEl = document.getElementById("matchesSignalDetail");
+  const signalFillEl = document.getElementById("matchesSignalMeterFill");
+  const riskLevelEl = document.getElementById("matchesRiskLevel");
+  const confidenceEl = document.getElementById("matchesConfidence");
+  const expectedEdgeEl = document.getElementById("matchesExpectedEdge");
+  const selectedDigitEl = document.getElementById("matchesSelectedDigit");
+
+  let submitting = false;
+  let matchesLoggedIn = false;
+  const digitRoll = [];
+  const lastDigitTrendGlyph = Array.from({ length: 10 }, () => null);
+  let prevPollPrice = null;
+  let prevPollDigit = null;
+  const digitPctSample = 120;
+  const BUY_COOLDOWN_AFTER_OK_MS = 2200;
+  let buyCooldownUntil = 0;
+  let lastMarketData = {};
+  let lastQuoteSnapshot = null;
+  let coachHotDigit = null;
+  let coachColdDigit = null;
+  let coachRisingDigit = null;
+  let coachRisingDigitSecond = null;
+  let marketCooldownUntil = 0;
+  let quoteCooldownUntil = 0;
+
+  function parseRetryAfterMs(text, fallbackMs = 30000) {
+    const msg = String(text || "");
+    const m = msg.match(/retry[_- ]?after[=:\s]+(\d+)/i);
+    if (!m) return fallbackMs;
+    const sec = Number(m[1]);
+    if (!Number.isFinite(sec) || sec <= 0) return fallbackMs;
+    return Math.min(sec * 1000, 120000);
+  }
+
+  function syncBuyButtonState() {
+    if (!buyBtn) return;
+    const cooling = Date.now() < buyCooldownUntil;
+    buyBtn.disabled = !matchesLoggedIn || submitting || cooling;
+    const hint = document.getElementById("matchesBuyCooldown");
+    if (hint) {
+      if (cooling && matchesLoggedIn) {
+        hint.classList.remove("hidden");
+        hint.textContent = `Next buy in ${Math.ceil((buyCooldownUntil - Date.now()) / 1000)}s (avoids double orders).`;
+      } else {
+        hint.classList.add("hidden");
+        hint.textContent = "";
+      }
+    }
+  }
+
+  function extractLastDigit(value) {
+    const s = String(value ?? "");
+    for (let i = s.length - 1; i >= 0; i -= 1) {
+      const ch = s[i];
+      if (ch >= "0" && ch <= "9") return Number(ch);
+    }
+    return null;
+  }
+
+  function syncDigitHighlight() {
+    const d = String(barrierEl?.value ?? "0");
+    if (selectedDigitEl) selectedDigitEl.textContent = d;
+    if (!grid) return;
+    grid.querySelectorAll(".digit-cell").forEach((cell) => {
+      cell.classList.toggle("digit-cell--active", cell.dataset.digit === d);
+    });
+  }
+
+  function computeStreak(rows) {
+    let win = 0;
+    let loss = 0;
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const r = String(rows[i]?.result || "").toLowerCase();
+      if (r === "win") {
+        if (loss > 0) break;
+        win += 1;
+      } else if (r === "loss") {
+        if (win > 0) break;
+        loss += 1;
+      }
+    }
+    if (win > 0) return `W${win}`;
+    if (loss > 0) return `L${loss}`;
+    return "FLAT";
+  }
+
+  function updatePerformance(status, rows) {
+    const matchRows = (rows || []).filter((r) => String(r.contract_type || "").toUpperCase() === "DIGITMATCH");
+    const wins = matchRows.filter((r) => String(r.result || "").toLowerCase() === "win").length;
+    const total = matchRows.length;
+    const hasPnl = status && Number.isFinite(Number(status?.profit));
+    const pnl = Number(status?.profit ?? 0);
+    if (pnlEl) {
+      pnlEl.textContent = hasPnl ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} USD` : "--";
+      pnlEl.classList.toggle("matches-pos", pnl > 0);
+      pnlEl.classList.toggle("matches-neg", pnl < 0);
+    }
+    if (winRateEl) winRateEl.textContent = total > 0 ? `${((wins / total) * 100).toFixed(1)}%` : "--";
+    if (streakEl) streakEl.textContent = computeStreak(matchRows);
+  }
+
+  function updateOpportunityAndSignal(points) {
+    const sample = (points || []).slice(-120);
+    const counts = Array.from({ length: 10 }, () => 0);
+    sample.forEach((p) => {
+      const d = extractLastDigit(p?.price);
+      if (d != null && d >= 0 && d <= 9) counts[d] += 1;
+    });
+    const n = counts.reduce((a, b) => a + b, 0);
+    if (n < 30) {
+      if (oppTitleEl) oppTitleEl.textContent = "Scanning for imbalance...";
+      if (oppTextEl) oppTextEl.textContent = "Need more ticks before ranking opportunities.";
+      if (signalLabelEl) signalLabelEl.textContent = "NO EDGE";
+      if (signalDetailEl) signalDetailEl.textContent = "Collecting samples...";
+      if (signalFillEl) signalFillEl.style.width = "6%";
+      if (confidenceEl) confidenceEl.textContent = "--";
+      if (riskLevelEl) riskLevelEl.textContent = "MEDIUM";
+      if (expectedEdgeEl) expectedEdgeEl.textContent = "--";
+      oppBannerEl?.classList.remove("matches-opportunity--hot");
+      return;
+    }
+    const expected = n / 10;
+    const zScores = counts.map((c) => (c - expected) / Math.sqrt(Math.max(expected * 0.9, 1e-9)));
+    let underDigit = 0;
+    for (let i = 1; i < 10; i += 1) {
+      if (zScores[i] < zScores[underDigit]) underDigit = i;
+    }
+    const selected = Number(barrierEl?.value ?? 0);
+    const selectedPct = ((counts[selected] / n) * 100).toFixed(1);
+    const underPct = ((counts[underDigit] / n) * 100).toFixed(1);
+    const strengthRaw = Math.max(0, -zScores[underDigit]);
+    const confidence = Math.min(95, Math.round((strengthRaw / 2.5) * 100));
+    const label =
+      confidence >= 75 ? "STRONG BUY MATCH" : confidence >= 55 ? "MODERATE BUY MATCH" : confidence >= 35 ? "WEAK EDGE" : "NO EDGE";
+    if (oppTitleEl) oppTitleEl.textContent = `Opportunity: digit ${underDigit} underrepresented (${underPct}%)`;
+    if (oppTextEl) {
+      oppTextEl.textContent = `Suggested focus: MATCH ${underDigit}. Selected ${selected} appears ${selectedPct}% vs expected 10.0%.`;
+    }
+    if (signalLabelEl) signalLabelEl.textContent = label;
+    if (signalDetailEl) signalDetailEl.textContent = `Confidence ${confidence}% · z=${zScores[underDigit].toFixed(2)} · sample ${n} ticks`;
+    if (signalFillEl) signalFillEl.style.width = `${Math.max(8, confidence)}%`;
+    if (confidenceEl) confidenceEl.textContent = `${confidence}%`;
+    if (expectedEdgeEl) expectedEdgeEl.textContent = `${(10 - Number(selectedPct)).toFixed(1)}% vs fair`;
+    if (riskLevelEl) {
+      riskLevelEl.textContent = confidence >= 75 ? "LOW" : confidence >= 50 ? "MEDIUM" : "HIGH";
+      riskLevelEl.classList.toggle("matches-pos", confidence >= 75);
+      riskLevelEl.classList.toggle("matches-neg", confidence < 50);
+    }
+    oppBannerEl?.classList.toggle("matches-opportunity--hot", confidence >= 55);
+  }
+
+  function renderTickerStrip() {
+    if (!tickerStripEl) return;
+    tickerStripEl.innerHTML = "";
+    const slice = digitRoll.slice(-36);
+    slice.forEach((d, idx) => {
+      const span = document.createElement("span");
+      span.className = "matches-ticker-digit";
+      span.classList.add(`matches-ticker-digit--d${d}`);
+      span.textContent = String(d);
+      if (idx === slice.length - 1) {
+        span.classList.add("matches-ticker-digit--head", "matches-ticker-digit--flash");
+      }
+      tickerStripEl.appendChild(span);
+    });
+    if (tickerEl) tickerEl.scrollLeft = tickerEl.scrollWidth;
+  }
+
+  function lastDigitFromMarketData(data) {
+    const pts = data?.points || [];
+    if (!pts.length) return null;
+    return extractLastDigit(pts[pts.length - 1]?.price);
+  }
+
+  function getMatchesRisingRankChoice() {
+    const r = document.querySelector('input[name="matchesRisingRank"]:checked');
+    return r && r.value === "2" ? 2 : 1;
+  }
+
+  function getActiveRisingDigit() {
+    return getMatchesRisingRankChoice() === 2 ? coachRisingDigitSecond : coachRisingDigit;
+  }
+
+  function syncCoachActionButtons() {
+    const applyHot = document.getElementById("matchesApplyHotBtn");
+    const applyCold = document.getElementById("matchesApplyColdBtn");
+    const applyRising = document.getElementById("matchesApplyRisingBtn");
+    const applyLast = document.getElementById("matchesApplyLastDigitBtn");
+    if (applyHot) applyHot.disabled = coachHotDigit == null;
+    if (applyCold) applyCold.disabled = coachColdDigit == null;
+    if (applyRising) {
+      const pick = getActiveRisingDigit();
+      applyRising.disabled = pick == null;
+      const rank = getMatchesRisingRankChoice();
+      applyRising.textContent = rank === 2 ? "Use 2nd rising digit" : "Use 1st rising digit";
+    }
+    if (applyLast) applyLast.disabled = prevPollDigit == null;
+  }
+
+  function applyCoachDigit(d) {
+    if (d == null || d < 0 || d > 9 || !barrierEl) return;
+    barrierEl.value = String(d);
+    syncDigitHighlight();
+    void refreshQuote();
+  }
+
+  function renderPossibleEntryPoints() {
+    const wrap = document.getElementById("matchesCoachEntries");
+    if (!wrap) return;
+    const map = new Map();
+    function addTag(digit, tag) {
+      if (digit == null || digit < 0 || digit > 9) return;
+      if (!map.has(digit)) map.set(digit, []);
+      const arr = map.get(digit);
+      if (!arr.includes(tag)) arr.push(tag);
+    }
+    addTag(coachHotDigit, "Hottest");
+    addTag(coachColdDigit, "Coldest");
+    addTag(coachRisingDigit, "1st↑");
+    addTag(coachRisingDigitSecond, "2nd↑");
+    addTag(prevPollDigit, "Last tick");
+
+    const order = [
+      coachRisingDigit,
+      coachRisingDigitSecond,
+      coachHotDigit,
+      coachColdDigit,
+      prevPollDigit,
+    ].filter((d) => d != null && d >= 0 && d <= 9);
+    const orderedDigits = [...new Set(order)];
+    const rest = [...map.keys()].filter((d) => !orderedDigits.includes(d));
+    const finalOrder = [...orderedDigits, ...rest.sort((a, b) => a - b)];
+
+    wrap.innerHTML = "";
+    if (finalOrder.length === 0) {
+      wrap.innerHTML = '<span class="subtle small">Need live ticks to suggest entry digits.</span>';
+      return;
+    }
+
+    finalOrder.forEach((digit) => {
+      const tags = map.get(digit) || [];
+      const chip = document.createElement("div");
+      chip.className = "matches-entry-chip";
+      chip.tabIndex = 0;
+      chip.setAttribute("role", "button");
+      chip.setAttribute("aria-label", `Set barrier to ${digit}: ${tags.join(", ")}`);
+      if (digit === coachHotDigit) chip.classList.add("matches-entry-chip--hot");
+      else if (digit === coachColdDigit) chip.classList.add("matches-entry-chip--cold");
+      if (digit === coachRisingDigit || digit === coachRisingDigitSecond) chip.classList.add("matches-entry-chip--rising");
+      const dEl = document.createElement("span");
+      dEl.className = "matches-entry-chip-digit";
+      dEl.textContent = String(digit);
+      const tEl = document.createElement("span");
+      tEl.className = "matches-entry-chip-tags";
+      tEl.textContent = tags.join(" · ");
+      chip.appendChild(dEl);
+      chip.appendChild(tEl);
+      chip.addEventListener("click", () => applyCoachDigit(digit));
+      chip.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          applyCoachDigit(digit);
+        }
+      });
+      wrap.appendChild(chip);
+    });
+  }
+
+  function updateStrategyCoach(data, lastDigit) {
+    const list = document.getElementById("matchesCoachList");
+    if (!list) return;
+    const points = data?.points || [];
+    const barrier = Number(barrierEl?.value ?? NaN);
+    const items = [];
+
+    const rsi = data?.last_rsi14;
+    const ma = data?.last_ma20;
+    const price = data?.last_price != null ? Number(data.last_price) : null;
+
+    if (Number.isFinite(rsi)) {
+      if (rsi >= 65) {
+        items.push({
+          text: `RSI(14) is stretched up (${rsi.toFixed(1)}) — recent closes rose quickly. **Digits stay random**; use RSI as mood, not digit signal.`,
+          cls: "matches-coach-li--note",
+        });
+      } else if (rsi <= 35) {
+        items.push({
+          text: `RSI(14) is stretched down (${rsi.toFixed(1)}) — recent closes fell quickly. **Digits stay random**; context only.`,
+          cls: "matches-coach-li--note",
+        });
+      } else {
+        items.push({
+          text: `RSI(14) ≈ ${rsi.toFixed(1)} — neutral chop zone on price; last-digit odds do not follow RSI.`,
+          cls: "",
+        });
+      }
+    }
+
+    if (price != null && Number.isFinite(ma)) {
+      const above = price > ma;
+      items.push({
+        text: `Price is **${above ? "above" : "below"}** the 20-tick MA (${Number(ma).toFixed(3)}). Short drift ${above ? "up" : "down"} — expiry digit still comes from the full path of ticks.`,
+        cls: "",
+      });
+    }
+
+    const counts = Array.from({ length: 10 }, () => 0);
+    const slice = points.slice(-60);
+    slice.forEach((p) => {
+      const d = extractLastDigit(p?.price);
+      if (d != null && d >= 0 && d <= 9) counts[d] += 1;
+    });
+    const total = counts.reduce((a, b) => a + b, 0);
+    coachHotDigit = null;
+    coachColdDigit = null;
+    coachRisingDigit = null;
+    coachRisingDigitSecond = null;
+    if (total >= 15) {
+      const maxC = Math.max(...counts);
+      const minC = Math.min(...counts);
+      coachHotDigit = counts.indexOf(maxC);
+      coachColdDigit = counts.indexOf(minC);
+      const hotPct = ((maxC / total) * 100).toFixed(1);
+      const coldPct = ((minC / total) * 100).toFixed(1);
+      items.push({
+        text: `In the last **${total}** ticks, last-digit **${coachHotDigit}** appeared most (${hotPct}%), **${coachColdDigit}** least (${coldPct}%). “Hot/cold” is descriptive only.`,
+        cls: "",
+      });
+    } else {
+      items.push({
+        text: "Still collecting ticks — heat/cold digits need a few more samples.",
+        cls: "",
+      });
+    }
+
+    const sampleRise = points.slice(-digitPctSample);
+    const midR = Math.floor(sampleRise.length / 2);
+    const recentR =
+      midR >= 8 ? sampleRise.slice(midR) : sampleRise.slice(-Math.min(30, sampleRise.length));
+    const prevR =
+      midR >= 8
+        ? sampleRise.slice(0, midR)
+        : sampleRise.slice(0, Math.max(0, sampleRise.length - recentR.length));
+    const countRRecent = Array.from({ length: 10 }, () => 0);
+    const countRPrev = Array.from({ length: 10 }, () => 0);
+    recentR.forEach((p) => {
+      const dd = extractLastDigit(p?.price);
+      if (dd != null && dd >= 0 && dd <= 9) countRRecent[dd] += 1;
+    });
+    prevR.forEach((p) => {
+      const dd = extractLastDigit(p?.price);
+      if (dd != null && dd >= 0 && dd <= 9) countRPrev[dd] += 1;
+    });
+    if (recentR.length >= 8 && prevR.length >= 8) {
+      const deltas = countRRecent.map((c, i) => c - countRPrev[i]);
+      const ranked = deltas
+        .map((delta, digit) => ({ digit, delta }))
+        .filter((x) => x.delta > 0)
+        .sort((a, b) => b.delta - a.delta || a.digit - b.digit);
+      coachRisingDigit = ranked[0] != null ? ranked[0].digit : null;
+      coachRisingDigitSecond = ranked[1] != null ? ranked[1].digit : null;
+      const maxDelta = ranked[0] != null ? ranked[0].delta : 0;
+      if (maxDelta > 0 && coachRisingDigit != null) {
+        const tiesAtFirst = ranked.filter((x) => x.delta === maxDelta).map((x) => x.digit);
+        const digitLabelFirst =
+          tiesAtFirst.length > 1 ? `**Tie (1st):** ${tiesAtFirst.join(", ")}` : `**${coachRisingDigit}**`;
+        let riseText = `**1st increasing digit:** ${digitLabelFirst} at **+${maxDelta}** (recent vs older half, ${recentR.length} vs ${prevR.length} ticks). `;
+        if (coachRisingDigitSecond != null && ranked[1]) {
+          riseText += `**2nd increasing:** **${coachRisingDigitSecond}** at **+${ranked[1].delta}**. Pick **1st** or **2nd** above for “Use rising digit” / your entry rule. Same as ▲ on the grid; not a forecast.`;
+        } else {
+          riseText +=
+            "No **2nd** rising digit (only one rank had a gain). Switch to **1st** if you had **2nd** selected.";
+        }
+        items.push({
+          text: riseText,
+          cls: "matches-coach-li--note",
+        });
+      } else {
+        items.push({
+          text: "**Increasing digits:** none — no digit gained hits in the recent half vs the older half (all flat or down).",
+          cls: "",
+        });
+      }
+    }
+
+    const streakDigits = points.map((p) => extractLastDigit(p?.price)).filter((d) => d != null);
+    if (streakDigits.length >= 2) {
+      const tail = streakDigits[streakDigits.length - 1];
+      let streak = 1;
+      for (let i = streakDigits.length - 2; i >= 0; i -= 1) {
+        if (streakDigits[i] === tail) streak += 1;
+        else break;
+      }
+      if (streak >= 3) {
+        items.push({
+          text: `**Streak:** last digit **${tail}** repeated **${streak}** times in this window — feels like a pattern; mathematically the next tick is not “due” to break it.`,
+          cls: "matches-coach-li--warn",
+        });
+      } else if (streak === 2) {
+        items.push({
+          text: `Last two ticks share last digit **${tail}** — weak repeat read; not an edge by itself.`,
+          cls: "",
+        });
+      }
+    }
+
+    if (lastDigit != null && !Number.isNaN(barrier)) {
+      items.push({
+        text: `Barrier **${barrier}** vs last printed digit **${lastDigit}**: ${lastDigit === barrier ? "**same** on this print" : "**different**"} — settlement uses the **official expiry** digit.`,
+        cls: lastDigit === barrier ? "matches-coach-li--note" : "",
+      });
+    }
+
+    if (lastQuoteSnapshot && Number.isFinite(lastQuoteSnapshot.implied_probability)) {
+      items.push({
+        text: `From Deriv **proposal**: implied win chance ≈ **${lastQuoteSnapshot.implied_probability.toFixed(1)}%** (ask ÷ payout). Payout is always from the API, not guessed here.`,
+        cls: "matches-coach-li--note",
+      });
+    }
+
+    list.innerHTML = "";
+    items.forEach(({ text, cls }) => {
+      const li = document.createElement("li");
+      if (cls) li.className = cls;
+      li.innerHTML = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      list.appendChild(li);
+    });
+    renderPossibleEntryPoints();
+    syncCoachActionButtons();
+  }
+
+  function renderHistoryStripFromPoints(points) {
+    const histEl = document.getElementById("matchesDigitHistory");
+    if (!histEl) return;
+    const slice = (points || []).slice(-20);
+    const digits = slice.map((p) => extractLastDigit(p?.price)).filter((d) => d != null);
+    histEl.innerHTML = "";
+    digits.forEach((d, i) => {
+      const pill = document.createElement("span");
+      pill.className = "matches-history-pill";
+      pill.textContent = String(d);
+      if (i === digits.length - 1) pill.classList.add("matches-history-pill--newest");
+      histEl.appendChild(pill);
+    });
+  }
+
+  function syncGridLastTick(digit) {
+    if (!grid || digit == null || digit < 0 || digit > 9) return;
+    grid.querySelectorAll(".digit-cell").forEach((cell) => {
+      const d = Number(cell.dataset.digit);
+      cell.classList.toggle("digit-cell--tick", d === digit);
+    });
+  }
+
+  function pushRollDigit(digit) {
+    if (digit == null || digit < 0 || digit > 9) return;
+    if (digitRoll.length && digitRoll[digitRoll.length - 1] === digit) return;
+    digitRoll.push(digit);
+    while (digitRoll.length > 48) digitRoll.shift();
+    renderTickerStrip();
+  }
+
+  function bumpArrow(el) {
+    if (!el) return;
+    el.classList.remove("matches-tick-arrow--pulse");
+    void el.offsetWidth;
+    el.classList.add("matches-tick-arrow--pulse");
+  }
+
+  function setPriceMovementArrow(price) {
+    if (!priceArrowEl) return;
+    priceArrowEl.classList.remove("matches-tick-arrow--up", "matches-tick-arrow--down", "matches-tick-arrow--flat");
+    if (prevPollPrice == null || price == null || Number.isNaN(price)) {
+      priceArrowEl.textContent = "";
+      if (pricePctEl) pricePctEl.textContent = "";
+      return;
+    }
+    const eps = 1e-12;
+    let dir = "flat";
+    if (price > prevPollPrice + eps) dir = "up";
+    else if (price < prevPollPrice - eps) dir = "down";
+    if (dir === "up") {
+      priceArrowEl.textContent = "▲";
+      priceArrowEl.classList.add("matches-tick-arrow--up");
+    } else if (dir === "down") {
+      priceArrowEl.textContent = "▼";
+      priceArrowEl.classList.add("matches-tick-arrow--down");
+    } else {
+      priceArrowEl.textContent = "·";
+      priceArrowEl.classList.add("matches-tick-arrow--flat");
+    }
+    if (pricePctEl && prevPollPrice) {
+      const rel = ((price - prevPollPrice) / Math.abs(prevPollPrice)) * 100;
+      pricePctEl.textContent = dir === "flat" ? "0.000%" : `${rel >= 0 ? "+" : ""}${rel.toFixed(3)}%`;
+    } else if (pricePctEl) {
+      pricePctEl.textContent = "";
+    }
+    bumpArrow(priceArrowEl);
+  }
+
+  function setDigitMovementArrow(digit) {
+    if (!digitArrowEl) return;
+    digitArrowEl.classList.remove("matches-tick-arrow--up", "matches-tick-arrow--down", "matches-tick-arrow--flat");
+    if (prevPollDigit == null || digit == null) {
+      digitArrowEl.textContent = "";
+      return;
+    }
+    let dir = "flat";
+    if (digit > prevPollDigit) dir = "up";
+    else if (digit < prevPollDigit) dir = "down";
+    if (dir === "up") {
+      digitArrowEl.textContent = "▲";
+      digitArrowEl.classList.add("matches-tick-arrow--up");
+    } else if (dir === "down") {
+      digitArrowEl.textContent = "▼";
+      digitArrowEl.classList.add("matches-tick-arrow--down");
+    } else {
+      digitArrowEl.textContent = "·";
+      digitArrowEl.classList.add("matches-tick-arrow--flat");
+    }
+    bumpArrow(digitArrowEl);
+  }
+
+  function renderMatchesDigitPercents(points) {
+    if (!grid) return;
+    const sample = (points || []).slice(-digitPctSample);
+    const countsSlice = (slice) => {
+      const c = Array.from({ length: 10 }, () => 0);
+      slice.forEach((p) => {
+        const dd = extractLastDigit(p?.price);
+        if (dd != null && dd >= 0 && dd <= 9) c[dd] += 1;
+      });
+      return c;
+    };
+    const countsAll = countsSlice(sample);
+    const total = countsAll.reduce((a, b) => a + b, 0);
+    const mid = Math.floor(sample.length / 2);
+    const recent = mid >= 8 ? sample.slice(mid) : sample.slice(-Math.min(30, sample.length));
+    const prev = mid >= 8 ? sample.slice(0, mid) : sample.slice(0, Math.max(0, sample.length - recent.length));
+    const countRecent = countsSlice(recent);
+    const countPrev = countsSlice(prev);
+
+    const maxAll = Math.max(...countsAll, 1);
+    const maxC = total > 0 ? Math.max(...countsAll) : 0;
+    const minC = total > 0 ? Math.min(...countsAll) : 0;
+    const uniformFreq = total > 0 && maxC === minC;
+    grid.querySelectorAll(".digit-cell").forEach((cell) => {
+      const d = Number(cell.dataset.digit);
+      const pctEl = cell.querySelector(".digit-cell-pct");
+      const barFill = cell.querySelector(".digit-cell-bar-fill");
+      const trendEl = cell.querySelector(".digit-cell-trend");
+
+      const cnt = countsAll[d];
+      const pct = total > 0 && !Number.isNaN(d) ? (countsAll[d] / total) * 100 : 0;
+      if (pctEl) pctEl.textContent = total > 0 ? `${pct.toFixed(1)}%` : "--";
+
+      const isMost = total > 0 && !uniformFreq && cnt === maxC;
+      const isLeast = total > 0 && !uniformFreq && cnt === minC;
+      const z = total > 0 ? (cnt - total / 10) / Math.sqrt(Math.max((total / 10) * 0.9, 1e-9)) : 0;
+      cell.classList.toggle("digit-cell--freq-most", isMost);
+      cell.classList.toggle("digit-cell--freq-least", isLeast);
+      cell.classList.toggle("matches-digit-cell--hot", z >= 1.1);
+      cell.classList.toggle("matches-digit-cell--cold", z <= -1.1);
+      cell.classList.remove("digit-cell--hot");
+
+      if (barFill) {
+        const hPct = maxAll > 0 ? (cnt / maxAll) * 100 : 0;
+        barFill.style.height = `${Math.max(6, hPct)}%`;
+        barFill.classList.remove(
+          "digit-cell-bar-fill--most",
+          "digit-cell-bar-fill--mid",
+          "digit-cell-bar-fill--least",
+          "digit-cell-bar-fill--high",
+          "digit-cell-bar-fill--low",
+        );
+        if (total > 0) {
+          if (isMost) barFill.classList.add("digit-cell-bar-fill--most");
+          else if (isLeast) barFill.classList.add("digit-cell-bar-fill--least");
+          else barFill.classList.add("digit-cell-bar-fill--mid");
+          barFill.style.opacity = `${Math.min(1, 0.45 + Math.abs(z) * 0.28)}`;
+        } else {
+          barFill.classList.add("digit-cell-bar-fill--mid");
+          barFill.style.opacity = "0.5";
+        }
+      }
+
+      if (trendEl) {
+        const cr = countRecent[d];
+        const cp = countPrev[d];
+        let t = "·";
+        let tcls = "digit-cell-trend--flat";
+        if (recent.length >= 8 && prev.length >= 8) {
+          if (cr > cp) {
+            t = "▲";
+            tcls = "digit-cell-trend--up";
+          } else if (cr < cp) {
+            t = "▼";
+            tcls = "digit-cell-trend--down";
+          }
+        }
+        trendEl.textContent = t;
+        trendEl.className = `digit-cell-trend ${tcls}`;
+        if (lastDigitTrendGlyph[d] !== t) {
+          void trendEl.offsetWidth;
+          trendEl.classList.add("matches-digit-trend--pulse");
+        }
+        lastDigitTrendGlyph[d] = t;
+      }
+    });
+    updateOpportunityAndSignal(points);
+  }
+
+  async function refreshQuote() {
+    if (Date.now() < quoteCooldownUntil) return;
+    const stake = Number(stakeEl?.value ?? 0);
+    const duration_ticks = Math.max(1, Math.min(10, Math.floor(Number(durationEl?.value ?? 5) || 5)));
+    if (durationEl) durationEl.value = String(duration_ticks);
+    if (!stake || stake <= 0 || !barrierEl) {
+      if (payoutEl) payoutEl.textContent = "--";
+      if (askEl) askEl.textContent = "--";
+      lastQuoteSnapshot = null;
+      updateStrategyCoach(lastMarketData, lastDigitFromMarketData(lastMarketData) ?? prevPollDigit);
+      return;
+    }
+    try {
+      const quote = await requestJson("/manual-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_type: "DIGITMATCH",
+          barrier: Number(barrierEl.value),
+          stake,
+          symbol: "R_100",
+          duration_ticks,
+        }),
+      });
+      if (payoutEl) payoutEl.textContent = `${Number(quote.payout ?? 0).toFixed(2)} USD`;
+      if (askEl) askEl.textContent = `${Number(quote.ask_price ?? 0).toFixed(2)} USD`;
+      lastQuoteSnapshot = {
+        implied_probability: Number(quote.implied_probability ?? NaN),
+        payout: Number(quote.payout ?? 0),
+        ask: Number(quote.ask_price ?? 0),
+        profit: Number(quote.profit ?? 0),
+      };
+      if (expectedEdgeEl && Number.isFinite(lastQuoteSnapshot.implied_probability)) {
+        expectedEdgeEl.textContent = `${(100 - lastQuoteSnapshot.implied_probability).toFixed(1)}% payout breakeven`;
+      }
+      updateStrategyCoach(lastMarketData, lastDigitFromMarketData(lastMarketData) ?? prevPollDigit);
+    } catch (_e) {
+      if (String(_e?.message || "").includes("429") || /rate|cooldown/i.test(String(_e?.message || ""))) {
+        quoteCooldownUntil = Date.now() + parseRetryAfterMs(_e?.message, 30000);
+      }
+      if (payoutEl) payoutEl.textContent = "--";
+      if (askEl) askEl.textContent = "--";
+      lastQuoteSnapshot = null;
+      if (expectedEdgeEl) expectedEdgeEl.textContent = "--";
+      updateStrategyCoach(lastMarketData, lastDigitFromMarketData(lastMarketData) ?? prevPollDigit);
+    }
+  }
+
+  let pollMarketInFlight = false;
+  async function pollMarket() {
+    if (pollMarketInFlight) return;
+    if (Date.now() < marketCooldownUntil) return;
+    pollMarketInFlight = true;
+    try {
+      const res = await requestJson("/market-data?symbol=R_100&timeframe=tick");
+      if (!res?.success) return;
+      lastMarketData = res?.data || {};
+      const points = lastMarketData.points || [];
+      if (!points.length) return;
+      const latest = points[points.length - 1];
+      const price = Number(latest.price ?? 0);
+      const digit = extractLastDigit(latest.price);
+      if (livePriceEl) livePriceEl.textContent = price ? price.toFixed(3) : "--";
+      if (liveDigitEl) liveDigitEl.textContent = digit != null ? String(digit) : "--";
+      if (Number.isFinite(price)) {
+        setPriceMovementArrow(price);
+        prevPollPrice = price;
+      }
+      if (digit != null) {
+        setDigitMovementArrow(digit);
+        prevPollDigit = digit;
+        pushRollDigit(digit);
+        syncGridLastTick(digit);
+      }
+      renderMatchesDigitPercents(points);
+      renderHistoryStripFromPoints(points);
+      updateStrategyCoach(lastMarketData, digit != null ? digit : lastDigitFromMarketData(lastMarketData));
+      const b = Number(barrierEl?.value ?? NaN);
+      if (previewEl && digit != null && !Number.isNaN(b)) {
+        previewEl.textContent =
+          digit === b
+            ? "Tick vs barrier: WIN (preview only — settlement is from Deriv contract)"
+            : "Tick vs barrier: LOSE (preview only — settlement is from Deriv contract)";
+      }
+    } catch (_err) {
+      if (String(_err?.message || "").includes("429") || /rate|cooldown/i.test(String(_err?.message || ""))) {
+        marketCooldownUntil = Date.now() + parseRetryAfterMs(_err?.message, 30000);
+      }
+    } finally {
+      pollMarketInFlight = false;
+    }
+  }
+
+  async function refreshMatchesHistoryHint(statusSnapshot = null) {
+    if (!lastContractEl) return;
+    try {
+      const rows = await requestJson("/history");
+      const matchRows = (rows || []).filter(
+        (r) => String(r.contract_type || "").toUpperCase() === "DIGITMATCH"
+      );
+      updatePerformance(statusSnapshot, rows || []);
+      const last = matchRows[matchRows.length - 1];
+      if (!last) {
+        lastContractEl.textContent = "Last settled trade: —";
+        return;
+      }
+      const resLabel = String(last.result || "").toLowerCase() === "win" ? "WIN" : "LOSS";
+      lastContractEl.textContent = `Last settled trade: ${resLabel} · digit ${last.digit ?? "-"} · ${last.timestamp ?? ""}`;
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  async function submitBuy() {
+    if (!barrierEl || !stakeEl || !durationEl || submitting) return;
+    if (Date.now() < buyCooldownUntil) {
+      showToast("Buy cooldown active — wait a moment.", 1100);
+      return;
+    }
+    submitting = true;
+    setLoading(buyBtn, true);
+    syncBuyButtonState();
+    const duration_ticks = Math.max(1, Math.min(10, Math.floor(Number(durationEl.value) || 5)));
+    durationEl.value = String(duration_ticks);
+    let tradeOk = false;
+    try {
+      const res = await requestJson("/manual-trade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_type: "DIGITMATCH",
+          barrier: Number(barrierEl.value),
+          stake: Number(stakeEl.value),
+          symbol: "R_100",
+          duration_ticks,
+        }),
+      });
+      tradeOk = true;
+      if (typeof res.won === "boolean") {
+        const apiLabel = res.won ? "WIN" : "LOSE";
+        showToast(
+          res.won
+            ? `Match WIN: +${Number(res.profit_delta ?? 0).toFixed(2)} USD`
+            : `Match LOSS: ${Number(res.profit_delta ?? 0).toFixed(2)} USD`,
+          1800,
+        );
+        if (lastContractEl) {
+          lastContractEl.textContent = `Last settled trade: ${apiLabel} (Deriv) · barrier ${barrierEl.value}`;
+        }
+      }
+    } catch (error) {
+      showToast(`Buy Match failed: ${error.message}`, 2600);
+    } finally {
+      setLoading(buyBtn, false);
+      submitting = false;
+      if (tradeOk) {
+        buyCooldownUntil = Date.now() + BUY_COOLDOWN_AFTER_OK_MS;
+        window.setTimeout(syncBuyButtonState, BUY_COOLDOWN_AFTER_OK_MS + 80);
+      }
+      syncBuyButtonState();
+    }
+    if (tradeOk) {
+      void Promise.all([refreshAuthState(), refreshQuote(), refreshMatchesHistoryHint()]).catch(() => {});
+    }
+  }
+
+  if (grid && barrierEl) {
+    grid.querySelectorAll(".digit-cell").forEach((cell) => {
+      cell.addEventListener("click", () => {
+        barrierEl.value = cell.dataset.digit ?? "0";
+        syncDigitHighlight();
+        refreshQuote();
+      });
+      cell.addEventListener("dblclick", async (e) => {
+        e.preventDefault();
+        if (!matchesLoggedIn || submitting || Date.now() < buyCooldownUntil) return;
+        barrierEl.value = cell.dataset.digit ?? "0";
+        syncDigitHighlight();
+        await refreshQuote();
+        submitBuy();
+      });
+    });
+  }
+  syncDigitHighlight();
+  stakeEl?.addEventListener("input", () => refreshQuote());
+  durationEl?.addEventListener("input", () => refreshQuote());
+  buyBtn.addEventListener("click", () => submitBuy());
+
+  document.getElementById("matchesApplyHotBtn")?.addEventListener("click", () => applyCoachDigit(coachHotDigit));
+  document.getElementById("matchesApplyColdBtn")?.addEventListener("click", () => applyCoachDigit(coachColdDigit));
+  document
+    .getElementById("matchesApplyRisingBtn")
+    ?.addEventListener("click", () => applyCoachDigit(getActiveRisingDigit()));
+  document.getElementById("matchesApplyLastDigitBtn")?.addEventListener("click", () => applyCoachDigit(prevPollDigit));
+
+  document.querySelectorAll('input[name="matchesRisingRank"]').forEach((inp) => {
+    inp.addEventListener("change", () => {
+      try {
+        localStorage.setItem("matchesRisingRank", inp.value);
+      } catch (_e) {
+        /* ignore */
+      }
+      syncCoachActionButtons();
+    });
+  });
+  try {
+    const saved = localStorage.getItem("matchesRisingRank");
+    const two = document.querySelector('input[name="matchesRisingRank"][value="2"]');
+    const one = document.querySelector('input[name="matchesRisingRank"][value="1"]');
+    if (saved === "2" && two) {
+      two.checked = true;
+      if (one) one.checked = false;
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+  syncCoachActionButtons();
+
+  let statusPollIndex = 0;
+  async function refreshMatchesStatus() {
+    try {
+      await refreshAuthState();
+      const status = await requestJson("/status");
+      applyHybridBannerFromStatus(status);
+      const loggedIn = !!lastDerivMe?.logged_in && !!lastDerivMe?.account;
+      matchesLoggedIn = loggedIn;
+      if (!loggedIn) buyCooldownUntil = 0;
+      if (accountStateEl) {
+        if (loggedIn) {
+          const kind = lastDerivMe.account?.kind === "real" ? "Real" : "Demo";
+          accountStateEl.textContent = `${lastDerivMe.account?.account ?? "Account"} (${kind})`;
+        } else {
+          accountStateEl.textContent = "Not logged in";
+        }
+      }
+      syncBuyButtonState();
+      if (statusPollIndex % 5 === 0) await refreshMatchesHistoryHint(status);
+      statusPollIndex += 1;
+    } catch (error) {
+      const msg = String(error?.message || "");
+      if (!/rate|cooldown|429/i.test(msg)) {
+        showToast(`Status: ${msg}`);
+      }
+    }
+  }
+
+  function matchesPageKeydown(e) {
+    if (!document.getElementById("matchesBuyBtn")) {
+      document.removeEventListener("keydown", matchesPageKeydown);
+      return;
+    }
+    if (e.key !== "Enter" || e.repeat) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+    const btn = document.getElementById("matchesBuyBtn");
+    if (!btn || btn.disabled || submitting) return;
+    e.preventDefault();
+    void submitBuy();
+  }
+  document.addEventListener("keydown", matchesPageKeydown);
+
+  const cooldownUiTimer = window.setInterval(() => {
+    if (Date.now() < buyCooldownUntil && document.getElementById("matchesBuyBtn")) syncBuyButtonState();
+  }, 400);
+
+  initAuthButtons();
+  refreshAuthState();
+  refreshQuote();
+  pollMarket();
+  refreshMatchesStatus();
+  refreshMatchesHistoryHint();
+  syncBuyButtonState();
+  setInterval(pollMarket, 3000);
+  setInterval(refreshQuote, 4500);
+  setInterval(refreshMatchesStatus, 2500);
+  window.setInterval(refreshAuthState, 15000);
+
+  window.addEventListener(
+    "pagehide",
+    () => {
+      document.removeEventListener("keydown", matchesPageKeydown);
+      window.clearInterval(cooldownUiTimer);
+    },
+    { once: true }
+  );
+}
+
 const __path = window.location.pathname;
 if (__path === "/" || __path === "") {
   initDashboardPage();
 } else if (__path === "/manual-trader") {
   initManualTraderPage();
+} else if (__path === "/matches") {
+  initMatchesPage();
 } else if (__path === "/strategies") {
   initStrategiesPage();
 } else if (__path === "/analysis") {
@@ -2347,4 +3396,15 @@ if (__path === "/" || __path === "") {
   initCopyPage();
 } else if (__path === "/builder") {
   initBuilderPage();
+} else if (__path === "/trading-bots") {
+  initTradingBotsPage();
+}
+
+// Global auth wiring fallback: some routes (e.g. TradingView) do not have a page initializer
+// that calls auth setup, but the layout still exposes login controls in the base header.
+initSectionTabs();
+initThemeToggle();
+initAuthButtons();
+if (document.getElementById("headerWalletBtn") || document.getElementById("authAccount")) {
+  refreshAuthState();
 }

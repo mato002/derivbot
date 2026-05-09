@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set active_nav = 'bots' %}
+{% block title %}Trading Bots — Deriv Platform{% endblock %}
+{% block content %}
+    <div class="page-inner page-inner--dash">
+      <header class="topbar card card--hero">
+        <div class="topbar__head">
+          <div class="topbar__titles">
+            <h1>Trading Bots</h1>
+            <p class="subtle">Bot catalog, runtime orchestration, and deployment workspace.</p>
+          </div>
+          <div class="topbar__auth-btns">
+            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
+            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+          </div>
+        </div>
+      </header>
+      <div class="section-tabs">
+        <button type="button">Summary</button>
+        <button type="button">Transactions</button>
+        <button type="button">Journal</button>
+        <button type="button">Logs</button>
+      </div>
+      <div class="terminal-grid-3">
+        <section class="trading-panel">
+          <h3>Bot Templates</h3>
+          <ul class="quick-strategy-list">
+            <li>Over/Under Scalp</li>
+            <li>Rise/Fall Momentum</li>
+            <li>Matches Engine</li>
+            <li>Confluence Swing</li>
+          </ul>
+        </section>
+        <section class="trading-panel">
+          <h3>Deployment Workspace</h3>
+          <p class="subtle small">Premium bot deployment UI placeholder. Hook this panel to your next orchestration layer.</p>
+          <div class="live-row"><span>Selected bot</span><strong>Over/Under Scalp</strong></div>
+          <div class="live-row"><span>Environment</span><strong>Demo</strong></div>
+          <div class="live-row"><span>Max risk/session</span><strong>2%</strong></div>
+        </section>
+        <aside class="trading-panel">
+          <h3>Run Panel</h3>
+          <button id="tradingBotsRunBtn" class="btn btn-start" style="width:100%">Run</button>
+          <button id="tradingBotsStopBtn" class="btn btn-stop" style="width:100%;margin-top:8px;">Stop</button>
+          <p class="subtle small" style="margin-top:10px;">Status: <span id="tradingBotsRunStatus" class="status-pill status-pill--danger">Not running</span></p>
+        </aside>
+      </div>
+    </div>
+{% endblock %}

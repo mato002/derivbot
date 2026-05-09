@@ -14,7 +14,7 @@
             <p class="subtle">Simple ticket: choose digit, set stake, tap Over/Under.</p>
           </div>
           <div class="topbar__auth-btns">
-            <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
             <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
           </div>
         </div>
@@ -31,6 +31,12 @@
 
       <div id="hybridBanner" class="card hybrid-banner hidden"></div>
 
+      <div class="section-tabs">
+        <button type="button">Summary</button>
+        <button type="button">Transactions</button>
+        <button type="button">Journal</button>
+        <button type="button">Logs</button>
+      </div>
       <main class="grid grid--dash manual-grid">
         <section class="card manual-market-card">
           <h2>Market context</h2>
@@ -125,6 +131,12 @@
           <input type="hidden" id="manualBarrier" value="5" />
           <button id="manualTradeBtn" class="btn btn-teal btn-trade-wide">Place selected side now</button>
           <p class="subtle small">One-tap mode: click <code>Over</code> or <code>Under</code> to place instantly. Shortcuts: <code>O</code>/<code>U</code> select side, <code>Enter</code> places selected side.</p>
+          <div class="card-lite">
+            <div><span>Recent contracts</span><strong id="manualRecentContracts">0</strong></div>
+            <div><span>P/L summary</span><strong id="manualPlSummary">$0.00</strong></div>
+            <div><span>Duration</span><strong id="manualDurationView">5 ticks</strong></div>
+            <div><span>Prediction</span><strong id="manualPredictionView">5</strong></div>
+          </div>
         </section>
       </main>
       <div class="manual-pane-nav" aria-label="Manual view switch">

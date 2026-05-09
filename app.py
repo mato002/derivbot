@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import html
 import json
 import hashlib
@@ -10,13 +11,13 @@ import logging
 import secrets
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request as UrlRequest, urlopen
 
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -28,6 +29,7 @@ from config import SESSION_SECRET
 from modules import copy_trading, market_data, strategy_engine
 from modules.deriv_auth import list_pat_accounts, open_ws_for_token
 from modules.bot_engine import DerivBot
+from modules.quant_engine import run_digit_backtest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,6 +78,11 @@ def builder(request: Request) -> HTMLResponse:
     return _page(request, "builder.html")
 
 
+@app.get("/trading-bots", response_class=HTMLResponse)
+def trading_bots_page(request: Request) -> HTMLResponse:
+    return _page(request, "trading_bots.html")
+
+
 @app.get("/copy-trading", response_class=HTMLResponse)
 def copy_trading_page(request: Request) -> HTMLResponse:
     return _page(request, "copy.html")
@@ -84,6 +91,11 @@ def copy_trading_page(request: Request) -> HTMLResponse:
 @app.get("/manual-trader", response_class=HTMLResponse)
 def manual_trader_page(request: Request) -> HTMLResponse:
     return _page(request, "manual_trader.html")
+
+
+@app.get("/matches", response_class=HTMLResponse)
+def matches_page(request: Request) -> HTMLResponse:
+    return _page(request, "matches.html")
 
 
 @app.get("/strategies", response_class=HTMLResponse)
@@ -106,7 +118,14 @@ def _pkce_code_challenge(verifier: str) -> str:
 def _deriv_oauth_redirect_uri(request: Request) -> str:
     explicit = getattr(app_config, "DERIV_OAUTH_REDIRECT_URI", "").strip()
     if explicit:
-        return explicit
+        # Local dev safety: if app is opened on localhost/127.0.0.1, prefer the current
+        # request callback host over a stale tunnel URL configured in settings.
+        req_host = str(getattr(request.url, "hostname", "") or "").strip().lower()
+        exp_host = (urlparse(explicit).hostname or "").strip().lower()
+        req_is_local = req_host in {"127.0.0.1", "localhost", "::1"}
+        exp_is_local = exp_host in {"127.0.0.1", "localhost", "::1"}
+        if not (req_is_local and not exp_is_local):
+            return explicit
     pub = getattr(app_config, "DERIV_PUBLIC_URL", "").strip()
     if pub:
         return f"{pub.rstrip('/')}/auth/deriv/callback"
@@ -238,18 +257,112 @@ def _oauth2_exchange_code(code: str, redirect_uri: str, code_verifier: str) -> d
 
 
 def _login_with_token(request: Request, token: str) -> RedirectResponse:
-    bot.set_api_token(token)
+    tok = str(token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Token is required.")
+    bot.set_api_token(tok)
+    if tok.startswith("pat_"):
+        pat_accounts = list_pat_accounts(tok, force_refresh=True)
+        if not pat_accounts:
+            raise HTTPException(status_code=401, detail="No options accounts found for this PAT token.")
+        for row in pat_accounts:
+            row["token"] = tok
+        selected = next((a for a in pat_accounts if str(a.get("kind")) == "demo"), pat_accounts[0])
+        request.session["deriv_accounts"] = pat_accounts
+        request.session["deriv_account"] = selected
+        request.session["deriv_manual_logout"] = False
+        bot.set_account_context(str(selected.get("account_id") or selected.get("account") or ""))
+        log.info("Deriv token login: logged in with PAT as %s", selected.get("account"))
+        return RedirectResponse(url="/")
     snapshot = bot.fetch_authorized_balance()
     selected = {
         "account": snapshot.get("account") or "ACCOUNT",
-        "token": token,
+        "token": tok,
         "currency": snapshot.get("currency") or "USD",
     }
     request.session["deriv_accounts"] = [selected]
     request.session["deriv_account"] = selected
     request.session["deriv_manual_logout"] = False
-    log.info("Deriv OAuth callback: logged in as %s", selected.get("account"))
+    bot.set_account_context(str(selected.get("account_id") or selected.get("account") or ""))
+    log.info("Deriv token login: logged in as %s", selected.get("account"))
     return RedirectResponse(url="/")
+
+
+@app.get("/auth/deriv/manual", response_class=HTMLResponse)
+def deriv_manual_token_login_page() -> HTMLResponse:
+    return HTMLResponse(
+        content="""
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Deriv token login</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 560px; margin: 48px auto; padding: 0 16px;
+    background:#fff; color:#1a2634; }
+  h1 { font-size: 1.25rem; margin-bottom: 8px; }
+  p { line-height: 1.45; }
+  input, button { font: inherit; }
+  input { width: 100%; box-sizing: border-box; border:1px solid #d7dbe4; border-radius:10px; padding:12px; }
+  button { margin-top: 10px; border:0; border-radius:10px; background:#1149d8; color:#fff; padding:10px 14px;
+    font-weight: 700; cursor: pointer; }
+  .hint { color:#4a5568; font-size:.95rem; }
+  .err { color:#9b1c1c; margin-top: 10px; }
+</style></head><body>
+  <h1>Login with Deriv API token</h1>
+  <p>Use this when OAuth login is blocked. Paste your Deriv token or PAT token below.</p>
+  <form id="tokenForm">
+    <input id="tokenInput" type="password" autocomplete="off" placeholder="Paste token (e.g. pat_...)" required />
+    <button type="submit">Login</button>
+  </form>
+  <p class="hint">Your token is sent only to this local app session.</p>
+  <p id="errorBox" class="err" hidden></p>
+  <p><a href="/">Home</a></p>
+  <script>
+    const form = document.getElementById("tokenForm");
+    const input = document.getElementById("tokenInput");
+    const errorBox = document.getElementById("errorBox");
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      errorBox.hidden = true;
+      const token = (input.value || "").trim();
+      if (!token) return;
+      const res = await fetch("/auth/deriv/login-token", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({token}),
+      });
+      if (res.ok) {
+        window.location.href = "/";
+        return;
+      }
+      let msg = "Token login failed.";
+      try {
+        const data = await res.json();
+        msg = data.detail || msg;
+      } catch (e) {}
+      errorBox.textContent = msg;
+      errorBox.hidden = false;
+    });
+  </script>
+</body></html>
+"""
+    )
+
+
+class DerivTokenLoginPayload(BaseModel):
+    token: str = Field(..., description="Deriv API token or PAT token")
+
+
+@app.post("/auth/deriv/login-token")
+def deriv_login_token(request: Request, payload: DerivTokenLoginPayload) -> RedirectResponse:
+    token = str(payload.token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required.")
+    try:
+        return _login_with_token(request, token)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Token login failed: {exc}") from exc
 
 
 @app.get("/auth/deriv/callback", name="deriv_callback", response_model=None)
@@ -338,6 +451,7 @@ def deriv_callback(request: Request) -> RedirectResponse | HTMLResponse:
                     f"<h2>OAuth token exchange failed</h2><p>{html.escape(str(exc))}</p>"
                     "<p>Tip: set <code>DERIV_AUTH_FLOW = \"legacy\"</code> in <code>config.py</code> "
                     "for acct/token callback flow used by this bot.</p>"
+                    "<p>Fallback: <a href=\"/auth/deriv/manual\">Login with API token</a>.</p>"
                 ),
                 status_code=502,
             )
@@ -372,7 +486,11 @@ def deriv_callback(request: Request) -> RedirectResponse | HTMLResponse:
 """
     if err:
         body += f"<p><strong>OAuth error:</strong> {err_html}</p><p>{desc_html}</p>"
-    body += "<p><a href=\"/auth/deriv/login\">Try Login with Deriv again</a> &nbsp;·&nbsp; <a href=\"/\">Home</a></p></body></html>"
+    body += (
+        "<p><a href=\"/auth/deriv/login\">Try Login with Deriv again</a> &nbsp;·&nbsp; "
+        "<a href=\"/auth/deriv/manual\">Login with API token</a> &nbsp;·&nbsp; "
+        "<a href=\"/\">Home</a></p></body></html>"
+    )
     return HTMLResponse(content=body, status_code=200)
 
 
@@ -455,7 +573,7 @@ def _ensure_config_token_session(request: Request) -> dict[str, Any] | None:
     return selected
 
 
-def _refresh_pat_accounts_if_available(request: Request) -> None:
+def _refresh_pat_accounts_if_available(request: Request, *, force: bool = False) -> None:
     """Refresh PAT account list in session so Demo/Real switching stays available."""
     if bool(request.session.get("deriv_manual_logout")):
         return
@@ -465,8 +583,16 @@ def _refresh_pat_accounts_if_available(request: Request) -> None:
         token = CONFIG_API_TOKEN
     if not str(token).startswith("pat_"):
         return
+    if not force:
+        last_ok = float(request.session.get("_pat_accounts_list_refresh_ok_ts") or 0.0)
+        if time.time() - last_ok < 120.0:
+            return
+        last_fail = float(request.session.get("_pat_accounts_list_refresh_fail_ts") or 0.0)
+        fail_backoff_sec = float(request.session.get("_pat_accounts_list_refresh_fail_backoff_sec") or 0.0)
+        if fail_backoff_sec > 0 and (time.time() - last_fail) < fail_backoff_sec:
+            return
     try:
-        pat_accounts = list_pat_accounts(token)
+        pat_accounts = list_pat_accounts(token, force_refresh=force)
         if not pat_accounts:
             return
         for row in pat_accounts:
@@ -497,7 +623,22 @@ def _refresh_pat_accounts_if_available(request: Request) -> None:
         request.session["deriv_account"] = selected
         bot.set_api_token(token)
         bot.set_account_context(str(selected.get("account_id") or selected.get("account") or ""))
+        request.session["_pat_accounts_list_refresh_ok_ts"] = time.time()
+        request.session["_pat_accounts_list_refresh_fail_ts"] = 0.0
+        request.session["_pat_accounts_list_refresh_fail_backoff_sec"] = 0.0
     except Exception as exc:
+        now = time.time()
+        prev_backoff = float(request.session.get("_pat_accounts_list_refresh_fail_backoff_sec") or 0.0)
+        if "(429)" in str(exc) or "429" in str(exc) or "rate-limit" in str(exc).lower():
+            next_backoff = min(300.0, max(30.0, (prev_backoff * 2.0) if prev_backoff else 30.0))
+            request.session["_pat_accounts_list_refresh_fail_backoff_sec"] = next_backoff
+            request.session["_pat_accounts_list_refresh_fail_ts"] = now
+            log.warning("PAT account refresh rate-limited; backing off %.0fs: %s", next_backoff, exc)
+            return
+        request.session["_pat_accounts_list_refresh_fail_backoff_sec"] = min(
+            120.0, max(10.0, (prev_backoff * 1.5) if prev_backoff else 10.0)
+        )
+        request.session["_pat_accounts_list_refresh_fail_ts"] = now
         log.warning("PAT account refresh failed: %s", exc)
 
 
@@ -544,7 +685,7 @@ def deriv_select_account(request: Request, payload: SelectDerivAccountPayload) -
             bot.set_account_context(str(row.get("account_id") or row.get("account") or ""))
             log.info("Switched active Deriv account to %s", wanted)
             return {"success": True, "account": _account_public(row)}
-    _refresh_pat_accounts_if_available(request)
+    _refresh_pat_accounts_if_available(request, force=True)
     raw_list = list(request.session.get("deriv_accounts") or [])
     for row in raw_list:
         if str(row.get("account", "")).strip() == wanted:
@@ -564,60 +705,50 @@ def deriv_balance(request: Request) -> dict:
     account = _require_deriv_session(request)
     token = str(account.get("token") or "").strip() or CONFIG_API_TOKEN
     selected_id = str(account.get("account_id") or account.get("account") or "").strip()
-    if token.startswith("pat_"):
-        try:
-            rows = list_pat_accounts(token)
-            if rows:
-                match = next(
-                    (
-                        r
-                        for r in rows
-                        if str(r.get("account_id") or r.get("account") or "").strip() == selected_id
-                    ),
-                    None,
-                )
-                if match is None and selected_id:
-                    # Fallback for legacy login-id style matching if upstream shape differs.
-                    match = next(
-                        (
-                            r
-                            for r in rows
-                            if str(r.get("account") or "").strip().upper() == selected_id.upper()
-                        ),
-                        None,
-                    )
-                if match:
-                    # Keep session balances fresh for profile dropdown and next requests.
-                    raw_list = list(request.session.get("deriv_accounts") or [])
-                    for row in raw_list:
-                        row_id = str(row.get("account_id") or row.get("account") or "").strip()
-                        if row_id == selected_id:
-                            row["balance"] = match.get("balance")
-                            row["currency"] = match.get("currency") or row.get("currency") or "USD"
-                            break
-                    request.session["deriv_accounts"] = raw_list
-                    selected = dict(request.session.get("deriv_account") or {})
-                    if selected:
-                        selected["balance"] = match.get("balance")
-                        selected["currency"] = match.get("currency") or selected.get("currency") or "USD"
-                        request.session["deriv_account"] = selected
-                    return {
-                        "success": True,
-                        "balance": {
-                            "account": match.get("account") or match.get("account_id") or selected_id,
-                            "currency": match.get("currency") or "USD",
-                            "balance": round(float(match.get("balance", 0.0)), 2),
-                        },
-                    }
-        except Exception as exc:
-            log.warning("PAT direct balance lookup failed, falling back to WS balance: %s", exc)
     if token:
         bot.set_api_token(token)
     bot.set_account_context(selected_id)
     try:
         snapshot = bot.fetch_authorized_balance()
     except Exception as exc:
+        msg = str(exc)
+        if "rate-limited" in msg.lower() or "cooldown" in msg.lower() or "429" in msg:
+            selected = request.session.get("deriv_account") or {}
+            cached_balance = selected.get("balance")
+            if cached_balance is None:
+                with bot.lock:
+                    cached_balance = bot.balance
+            return {
+                "success": True,
+                "stale": True,
+                "rate_limited": True,
+                "balance": {
+                    "account": selected.get("account") or selected_id or "ACCOUNT",
+                    "currency": selected.get("currency") or "USD",
+                    "balance": round(float(cached_balance or 0.0), 2),
+                },
+                "warning": f"Deriv temporarily rate-limited WS handshake: {msg}",
+            }
         raise HTTPException(status_code=502, detail=f"Unable to fetch balance: {exc}") from exc
+    # PAT: avoid list_pat_accounts (GET /options/accounts) here — it rate-limits quickly; WS
+    # balance is authoritative and keeps the session copy in sync for the account switcher.
+    if token.startswith("pat_") and selected_id:
+        bal = snapshot.get("balance")
+        cur = str(snapshot.get("currency") or "USD").strip() or "USD"
+        raw_list = list(request.session.get("deriv_accounts") or [])
+        for row in raw_list:
+            row_id = str(row.get("account_id") or row.get("account") or "").strip()
+            if row_id == selected_id:
+                row["balance"] = bal
+                row["currency"] = cur
+                break
+        request.session["deriv_accounts"] = raw_list
+        selected = dict(request.session.get("deriv_account") or {})
+        sel_id = str(selected.get("account_id") or selected.get("account") or "").strip()
+        if selected and sel_id == selected_id:
+            selected["balance"] = bal
+            selected["currency"] = cur
+            request.session["deriv_account"] = selected
     return {"success": True, "balance": snapshot}
 
 
@@ -739,10 +870,62 @@ def trade_history() -> list[dict]:
     return bot.history()
 
 
+@app.get("/stats")
+def bot_stats() -> dict:
+    return {
+        "success": True,
+        "stats": bot.stats_engine.snapshot(),
+        "risk": bot.risk_engine.snapshot(),
+        "last_model_decision": bot.status().get("last_model_decision"),
+    }
+
+
+@app.get("/journal")
+def trade_journal(limit: int = 100) -> dict:
+    return {"success": True, "rows": bot.journal.recent(limit=max(1, min(limit, 500)))}
+
+
+@app.get("/events")
+def bot_events(since_seq: int = 0, limit: int = 120) -> dict:
+    payload = bot.events_since(seq=since_seq, limit=limit)
+    return {"success": True, **payload}
+
+
+@app.get("/events/stream")
+async def bot_events_stream(since_seq: int = 0, max_seconds: int = 30):
+    start = time.time()
+    cursor = int(since_seq)
+    window = max(5, min(int(max_seconds), 120))
+
+    async def _gen():
+        nonlocal cursor
+        # Initial comment line keeps some proxies from buffering forever.
+        yield ": connected\n\n"
+        while (time.time() - start) < window:
+            chunk = bot.events_since(seq=cursor, limit=200)
+            rows = chunk.get("events") or []
+            if rows:
+                for row in rows:
+                    cursor = max(cursor, int(row.get("seq") or 0))
+                    yield f"data: {json.dumps(row)}\n\n"
+            else:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(0.75)
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
 class SettingsPayload(BaseModel):
     stake: float = Field(..., gt=0)
     take_profit: float = Field(..., gt=0)
     stop_loss: float
+
+
+class BacktestPayload(BaseModel):
+    symbol: str = "R_100"
+    count: int = Field(default=2000, ge=300, le=20000)
+    barrier: int = Field(default=5, ge=0, le=9)
+    stake: float = Field(default=1.0, gt=0)
 
 
 @app.post("/update-settings")
@@ -753,6 +936,19 @@ def update_settings(payload: SettingsPayload) -> dict:
         stop_loss=payload.stop_loss,
     )
     return {"success": True, "settings": settings}
+
+
+@app.post("/backtest")
+def backtest(request: Request, payload: BacktestPayload) -> dict:
+    account = _require_deriv_session(request)
+    token = str(account.get("token") or "").strip() or CONFIG_API_TOKEN
+    if token:
+        bot.set_api_token(token)
+    aid = str(account.get("account_id") or account.get("account") or "").strip() or None
+    ticks = market_data.fetch_ticks_history(token, payload.symbol, count=payload.count, account_id=aid)
+    digits = [int(f"{float(x['price']):.5f}"[-1]) for x in ticks]
+    results = run_digit_backtest(digits, barrier=payload.barrier, stake=payload.stake)
+    return {"success": True, "results": results, "sample_size": len(digits)}
 
 
 class StrategyPayload(BaseModel):
@@ -798,19 +994,38 @@ def update_strategy_confluence(updates: dict[str, Any] = Body(default_factory=di
 
 
 class ManualTradePayload(BaseModel):
-    contract_type: str = Field(..., description="DIGITOVER or DIGITUNDER")
+    contract_type: str = Field(..., description="DIGITOVER, DIGITUNDER, or DIGITMATCH")
     barrier: int = Field(..., ge=0, le=9)
     stake: float = Field(..., gt=0)
     symbol: str = "R_100"
+    duration_ticks: int = Field(default=1, ge=1, le=10, description="Tick duration (DIGITMATCH); Over/Under forced to 1")
+
+
+def _manual_duration_ticks(contract_upper: str, requested: int) -> int:
+    if contract_upper in {"DIGITOVER", "DIGITUNDER"}:
+        return 1
+    return max(1, min(10, int(requested)))
 
 
 @app.post("/manual-quote")
 def manual_quote(request: Request, payload: ManualTradePayload) -> dict:
     _require_deriv_session(request)
     ct = payload.contract_type.upper()
-    if ct not in {"DIGITOVER", "DIGITUNDER"}:
-        raise HTTPException(status_code=400, detail="contract_type must be DIGITOVER or DIGITUNDER")
-    result = bot.manual_quote(ct, payload.barrier, payload.stake, payload.symbol)
+    if ct not in {"DIGITOVER", "DIGITUNDER", "DIGITMATCH"}:
+        raise HTTPException(
+            status_code=400, detail="contract_type must be DIGITOVER, DIGITUNDER, or DIGITMATCH"
+        )
+    ticks = _manual_duration_ticks(ct, payload.duration_ticks)
+    try:
+        result = bot.manual_quote(ct, payload.barrier, payload.stake, payload.symbol, duration_ticks=ticks)
+    except Exception as exc:
+        msg = str(exc)
+        if "rate-limited" in msg.lower() or "cooldown" in msg.lower() or "429" in msg:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Manual quote temporarily unavailable due to Deriv rate limiting: {msg}",
+            ) from exc
+        raise HTTPException(status_code=502, detail=f"manual quote failed: {msg}") from exc
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "quote failed"))
     return result
@@ -820,9 +1035,12 @@ def manual_quote(request: Request, payload: ManualTradePayload) -> dict:
 def manual_trade(request: Request, payload: ManualTradePayload) -> dict:
     _require_deriv_session(request)
     ct = payload.contract_type.upper()
-    if ct not in {"DIGITOVER", "DIGITUNDER"}:
-        raise HTTPException(status_code=400, detail="contract_type must be DIGITOVER or DIGITUNDER")
-    result = bot.manual_trade(ct, payload.barrier, payload.stake, payload.symbol)
+    if ct not in {"DIGITOVER", "DIGITUNDER", "DIGITMATCH"}:
+        raise HTTPException(
+            status_code=400, detail="contract_type must be DIGITOVER, DIGITUNDER, or DIGITMATCH"
+        )
+    ticks = _manual_duration_ticks(ct, payload.duration_ticks)
+    result = bot.manual_trade(ct, payload.barrier, payload.stake, payload.symbol, duration_ticks=ticks)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "manual trade failed"))
     return result
@@ -866,13 +1084,27 @@ def copy_status() -> dict:
 @app.get("/market-data")
 def market_data_endpoint(request: Request, symbol: str = "R_100", timeframe: str = "tick") -> dict:
     try:
-        _require_deriv_session(request)
+        sess = _require_deriv_session(request)
+        aid = str(sess.get("account_id") or sess.get("account") or "").strip() or None
         with bot.lock:
             token = bot.api_token
-        data = market_data.build_market_payload(token, symbol, timeframe)
+        data = market_data.build_market_payload(token, symbol, timeframe, account_id=aid)
         return {"success": True, "data": data}
     except Exception as exc:
-        log.exception("market-data error")
+        msg = str(exc)
+        if "429" in msg or "rate-limit" in msg.lower() or "cooldown" in msg.lower():
+            log.warning("market-data rate-limited: %s", msg)
+            cached = market_data.get_cached_market_payload(symbol, timeframe, account_id=aid)
+            if cached:
+                return {
+                    "success": True,
+                    "stale": True,
+                    "rate_limited": True,
+                    "warning": msg,
+                    "data": cached,
+                }
+        else:
+            log.exception("market-data error")
         return {"success": False, "error": str(exc), "data": {}}
 
 
@@ -890,7 +1122,8 @@ def diagnostics(request: Request) -> dict:
         try:
             with bot.lock:
                 token = bot.api_token
-            sample = market_data.fetch_ticks_history(token, "R_100", count=12)
+            aid = str(session_account.get("account_id") or session_account.get("account") or "").strip() or None
+            sample = market_data.fetch_ticks_history(token, "R_100", count=12, account_id=aid)
             market_ok = bool(sample)
         except Exception as exc:
             market_error = str(exc)

@@ -13,10 +13,16 @@
         </div>
         <div class="auth-panel">
           <span id="authAccount" class="subtle">Not logged in</span>
-          <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+          <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
           <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
         </div>
       </header>
+      <div class="section-tabs">
+        <button type="button">Summary</button>
+        <button type="button">Transactions</button>
+        <button type="button">Journal</button>
+        <button type="button">Signals</button>
+      </div>
 
       <section class="card">
         <div class="toolbar">
@@ -64,6 +70,13 @@
               <div id="signalTrend">-</div>
               <div class="subtle">Stream</div>
               <div id="signalStream">Connecting...</div>
+            </div>
+            <hr />
+            <h3>Indicators</h3>
+            <div class="analysis-signal-grid">
+              <div class="subtle">Digit analysis</div><div id="digitAnalysisPanel">Monitoring ticks</div>
+              <div class="subtle">Volatility</div><div id="volatilityAnalysisPanel">Adaptive</div>
+              <div class="subtle">Timeframe</div><div id="timeframeView">tick</div>
             </div>
           </aside>
         </div>

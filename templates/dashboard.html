@@ -10,8 +10,8 @@
       <header class="topbar card card--hero">
         <div class="topbar__head">
           <div class="topbar__titles">
-            <h1>Dashboard</h1>
-            <p class="subtle">Volatility 100 digit bot, balance, and history</p>
+            <h1>Trading Dashboard</h1>
+            <p class="subtle">Professional Deriv automation command center</p>
           </div>
           <div class="topbar__auth-btns">
             <div id="profileMenuWrap" class="profile-menu hidden">
@@ -24,7 +24,7 @@
                 <button id="logoutDerivMenuBtn" type="button" class="btn btn-stop profile-menu__logout">Logout</button>
               </div>
             </div>
-            <button id="loginDerivBtn" class="btn btn-blue">Login with Deriv</button>
+            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
           </div>
         </div>
         <div class="topbar__sub">
@@ -64,7 +64,18 @@
         <p id="diagDetail" class="subtle small"></p>
       </section>
 
-      <main class="grid grid--dash">
+      <section class="metric-grid-8">
+        <div class="metric-card-dark"><span>Deriv Login Status</span><strong id="dashLoginStatus">Connected</strong></div>
+        <div class="metric-card-dark"><span>Deriv Balance</span><strong id="balanceMirror">--</strong></div>
+        <div class="metric-card-dark"><span>Today Profit</span><strong class="profit-positive" id="todayProfit">$0.00</strong></div>
+        <div class="metric-card-dark"><span>Today Loss</span><strong class="profit-negative" id="todayLoss">$0.00</strong></div>
+        <div class="metric-card-dark"><span>Net P/L</span><strong id="netPl">$0.00</strong></div>
+        <div class="metric-card-dark"><span>Active Trades</span><strong id="activeTradesMirror">0</strong></div>
+        <div class="metric-card-dark"><span>Win Rate</span><strong id="winRateCard">--</strong></div>
+        <div class="metric-card-dark"><span>Bot Status</span><strong id="botStatusCard">Stopped</strong></div>
+      </section>
+
+      <main class="grid grid--dash" style="margin-top:12px;">
         <section class="card control-panel-card">
           <h2>Control Panel</h2>
           <div class="button-row control-panel-run-row">
@@ -146,8 +157,16 @@
         </section>
 
         <section class="card">
-          <h2>Profit Chart</h2>
+          <h2>Profit Curve</h2>
           <canvas id="profitChart"></canvas>
+        </section>
+
+        <section class="card">
+          <h2>Strategy Performance</h2>
+          <p class="subtle small">Win/Loss ratio, expectancy, and active strategy benchmark placeholders.</p>
+          <div class="live-row"><span>Current strategy</span><strong id="activeStrategyName">Over/Under</strong></div>
+          <div class="live-row"><span>Average return</span><strong id="avgReturnMetric">--</strong></div>
+          <div class="live-row"><span>Best run</span><strong id="bestRunMetric">--</strong></div>
         </section>
 
         <section class="card full-width">

@@ -7,12 +7,28 @@
 {% endblock %}
 {% block content %}
     <div class="page-inner page-inner--builder">
+      <div class="section-tabs" aria-label="Builder tabs">
+        <button type="button">Summary</button>
+        <button type="button">Transactions</button>
+        <button type="button">Journal</button>
+        <button type="button">Logs</button>
+        <button type="button">Errors</button>
+      </div>
       <div class="builder-app-shell card">
         <div class="builder-workbench">
           <aside class="builder-palette" id="builderSidebar" aria-label="Blocks menu">
             <button type="button" class="btn btn-start builder-quick-strategy" id="builderQuickStrategyBtn">
               Quick strategy
             </button>
+            <ul class="quick-strategy-list">
+              <li>Volatility 100</li>
+              <li>Rise/Fall</li>
+              <li>Even/Odd</li>
+              <li>Over/Under</li>
+              <li>Matches/Differs</li>
+              <li>Martingale</li>
+              <li>Custom strategy</li>
+            </ul>
             <div class="builder-sidebar-head">
               <h3 class="builder-palette-heading">Blocks menu</h3>
               <button type="button" class="builder-icon-btn" id="builderSidebarToggle" aria-label="Collapse block menu">⌃</button>
@@ -45,8 +61,11 @@
           <div class="builder-center" id="builderCenterPane">
             <div class="builder-toolbar" role="toolbar" aria-label="Workspace tools">
               <button type="button" class="builder-icon-btn" id="builderCollapseSidebarBtn" title="Collapse sidebar">☰</button>
-              <button type="button" class="builder-icon-btn" id="builderSearchReplaceBtn" title="Search and replace">⌕</button>
+              <button type="button" class="builder-icon-btn" id="builderSearchReplaceBtn" title="Open strategy">📂</button>
               <button type="button" class="builder-icon-btn" id="builderGlobalsBtn" title="Global variables">⌘</button>
+              <button type="button" class="builder-icon-btn" title="New strategy">✚</button>
+              <button type="button" class="builder-icon-btn" title="Undo">↶</button>
+              <button type="button" class="builder-icon-btn" title="Redo">↷</button>
               <span class="builder-toolbar-sep" aria-hidden="true"></span>
               <button type="button" class="builder-icon-btn" id="builderSnapToggleBtn" title="Snap to grid">⌗</button>
               <button type="button" class="builder-icon-btn" id="builderCleanBtn" title="Clean up blocks">⇅</button>
@@ -57,8 +76,8 @@
               <button type="button" class="builder-icon-btn" id="builderZoomInBtn" title="Zoom in">＋</button>
               <button type="button" class="builder-icon-btn" id="builderFitBtn" title="Fit to view">⛶</button>
               <span class="builder-toolbar-sep" aria-hidden="true"></span>
-              <button type="button" class="builder-icon-btn" id="loadStrategyBtn" title="Load strategy">⤒</button>
-              <button type="button" class="builder-icon-btn builder-tool-btn--primary" id="generateStrategyBtn" title="Save strategy">⤓</button>
+              <button type="button" class="builder-icon-btn" id="loadStrategyBtn" title="Import strategy">⤒</button>
+              <button type="button" class="builder-icon-btn builder-tool-btn--primary" id="generateStrategyBtn" title="Export strategy">⤓</button>
             </div>
             <div id="blocklyDiv" class="builder-blockly-host"></div>
             <button type="button" class="builder-floating-trash" id="builderFloatingTrash" aria-label="Trash zone">🗑</button>
@@ -77,7 +96,7 @@
               <button type="button" class="builder-run-tab builder-run-tab--active" data-tab="summary" role="tab" aria-selected="true">
                 Summary
               </button>
-              <button type="button" class="builder-run-tab" data-tab="json" role="tab" aria-selected="false">JSON</button>
+              <button type="button" class="builder-run-tab" data-tab="json" role="tab" aria-selected="false">Transactions</button>
               <button type="button" class="builder-run-tab" data-tab="journal" role="tab" aria-selected="false">Journal</button>
             </div>
             <div id="builderTabSummary" class="builder-tab-panel" role="tabpanel">
@@ -86,6 +105,10 @@
                 <div><dt>Trades</dt><dd id="builderStatTrades">—</dd></div>
                 <div><dt>Profit</dt><dd id="builderStatProfit">— <canvas id="builderProfitSparkline" width="86" height="22"></canvas></dd></div>
                 <div><dt>Balance</dt><dd id="builderStatBalance">—</dd></div>
+                <div><dt>Current market</dt><dd id="builderCurrentMarket">R_100</dd></div>
+                <div><dt>Last digit</dt><dd id="builderLastDigit">-</dd></div>
+                <div><dt>Last contract</dt><dd id="builderLastContract">-</dd></div>
+                <div><dt>Session duration</dt><dd id="builderSessionDuration">00:00:00</dd></div>
               </dl>
             </div>
             <div id="builderTabJson" class="builder-tab-panel hidden" role="tabpanel">

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from threading import Lock
 from urllib.error import HTTPError, URLError
@@ -14,7 +15,18 @@ import config as app_config
 
 _PAT_ACCOUNTS_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _PAT_ACCOUNTS_LOCK = Lock()
-_PAT_ACCOUNTS_TTL_SEC = 20.0
+_PAT_ACCOUNTS_TTL_SEC = 300.0
+# Serialize GET /options/accounts per token so concurrent requests do not stampede.
+_PAT_LIST_FETCH_LOCKS: dict[str, Lock] = {}
+_PAT_LIST_FETCH_GUARD = Lock()
+
+# PAT OTP is expensive and rate-limited; cache ws URL per token+account.
+_PAT_OTP_CACHE: dict[str, tuple[float, str, str]] = {}
+_PAT_OTP_LOCK = Lock()
+_PAT_OTP_TTL_SEC = 45.0
+_PAT_OTP_STALE_MAX_SEC = 180.0
+_PAT_WS_CONNECT_COOLDOWN_UNTIL: dict[str, float] = {}
+_PAT_OTP_REST_COOLDOWN_UNTIL: dict[str, float] = {}
 
 
 def get_deriv_app_id() -> str:
@@ -48,7 +60,7 @@ def _rest_json(method: str, url: str, token: str, payload: dict | None = None) -
         body = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     last_err: Exception | None = None
-    for attempt in range(1, 4):
+    for attempt in range(1, 6):
         req = UrlRequest(url=url, data=body, method=method.upper(), headers=headers)
         try:
             with urlopen(req, timeout=30) as resp:
@@ -59,15 +71,27 @@ def _rest_json(method: str, url: str, token: str, payload: dict | None = None) -
                 raise RuntimeError(f"Deriv REST {method} {url} non-JSON response: {raw[:180]}") from exc
         except HTTPError as exc:
             err_body = exc.read().decode("utf-8", errors="replace")
-            # Retry transient upstream failures only.
-            if exc.code >= 500 and attempt < 3:
+            # Retry transient upstream failures and rate limits (bounded backoff).
+            if exc.code >= 500 and attempt < 4:
                 last_err = RuntimeError(f"Deriv REST {method} {url} failed ({exc.code}): {err_body}")
                 time.sleep(0.9 * attempt)
+                continue
+            if exc.code == 429 and attempt < 5:
+                last_err = RuntimeError(f"Deriv REST {method} {url} failed ({exc.code}): {err_body}")
+                delay = min(2.0 * attempt, 12.0)
+                try:
+                    parsed = json.loads(err_body)
+                    ra = int(parsed.get("retry_after") or 0)
+                    if ra > 0:
+                        delay = min(float(ra), 15.0)
+                except Exception:
+                    pass
+                time.sleep(delay)
                 continue
             raise RuntimeError(f"Deriv REST {method} {url} failed ({exc.code}): {err_body}") from exc
         except URLError as exc:
             last_err = RuntimeError(f"Deriv REST {method} {url} failed: {exc.reason}")
-            if attempt < 3:
+            if attempt < 6:
                 time.sleep(0.9 * attempt)
                 continue
             raise last_err from exc
@@ -122,28 +146,38 @@ def _map_pat_accounts(payload: dict) -> list[dict]:
     return out
 
 
+def _pat_list_fetch_lock(tok: str) -> Lock:
+    with _PAT_LIST_FETCH_GUARD:
+        lk = _PAT_LIST_FETCH_LOCKS.get(tok)
+        if lk is None:
+            lk = Lock()
+            _PAT_LIST_FETCH_LOCKS[tok] = lk
+        return lk
+
+
 def list_pat_accounts(token: str, *, force_refresh: bool = False) -> list[dict]:
     tok = str(token or "").strip()
-    now = time.monotonic()
-    if not force_refresh:
-        with _PAT_ACCOUNTS_LOCK:
-            cached = _PAT_ACCOUNTS_CACHE.get(tok)
-        if cached and (now - cached[0]) <= _PAT_ACCOUNTS_TTL_SEC:
-            return list(cached[1])
-    try:
-        payload = _rest_json("GET", "https://api.derivws.com/trading/v1/options/accounts", token=tok)
-        mapped = _map_pat_accounts(payload)
-        with _PAT_ACCOUNTS_LOCK:
-            _PAT_ACCOUNTS_CACHE[tok] = (now, list(mapped))
-        return mapped
-    except Exception as exc:
-        # If Deriv rate-limits account list calls, use stale cache.
-        if "(429)" in str(exc):
+    with _pat_list_fetch_lock(tok):
+        now = time.monotonic()
+        if not force_refresh:
             with _PAT_ACCOUNTS_LOCK:
                 cached = _PAT_ACCOUNTS_CACHE.get(tok)
-            if cached:
+            if cached and (now - cached[0]) <= _PAT_ACCOUNTS_TTL_SEC:
                 return list(cached[1])
-        raise
+        try:
+            payload = _rest_json("GET", "https://api.derivws.com/trading/v1/options/accounts", token=tok)
+            mapped = _map_pat_accounts(payload)
+            with _PAT_ACCOUNTS_LOCK:
+                _PAT_ACCOUNTS_CACHE[tok] = (time.monotonic(), list(mapped))
+            return mapped
+        except Exception as exc:
+            # If Deriv rate-limits account list calls, use stale cache.
+            if "(429)" in str(exc):
+                with _PAT_ACCOUNTS_LOCK:
+                    cached = _PAT_ACCOUNTS_CACHE.get(tok)
+                if cached:
+                    return list(cached[1])
+            raise
 
 
 def get_pat_account_id(token: str) -> str:
@@ -157,22 +191,69 @@ def get_pat_account_id(token: str) -> str:
     return account_id
 
 
+def _pat_otp_cache_key(token: str, account_id: str) -> str:
+    return f"{token}\x00{account_id}"
+
+
+def _extract_retry_after_seconds(text: str, default: int = 30) -> int:
+    m = re.search(r"retry-after['\"]?\s*:\s*['\"]?(\d+)", text, flags=re.IGNORECASE)
+    if not m:
+        return int(default)
+    try:
+        return max(1, int(m.group(1)))
+    except Exception:
+        return int(default)
+
+
 def get_pat_ws_url(token: str, account_id: str | None = None) -> tuple[str, str]:
-    acct = (account_id or "").strip() or get_pat_account_id(token)
-    payload = _rest_json(
-        "POST",
-        f"https://api.derivws.com/trading/v1/options/accounts/{acct}/otp",
-        token=token,
-    )
-    data = payload.get("data") if isinstance(payload, dict) else None
-    ws_url = ""
-    if isinstance(data, dict):
-        ws_url = str(data.get("url") or "").strip()
-    if not ws_url:
-        ws_url = str(payload.get("url") or "").strip() if isinstance(payload, dict) else ""
-    if not ws_url:
-        raise RuntimeError(f"OTP response missing ws url: {payload}")
-    return ws_url, acct
+    tok = str(token or "").strip()
+    acct = (account_id or "").strip() or get_pat_account_id(tok)
+    key = _pat_otp_cache_key(tok, acct)
+    now = time.monotonic()
+    with _PAT_OTP_LOCK:
+        cached = _PAT_OTP_CACHE.get(key)
+        rest_blocked_until = float(_PAT_OTP_REST_COOLDOWN_UNTIL.get(key, 0.0))
+    if cached:
+        age = now - cached[0]
+        if age <= _PAT_OTP_TTL_SEC:
+            return cached[1], cached[2]
+    if rest_blocked_until > now:
+        wait_sec = int(rest_blocked_until - now)
+        if cached and (now - cached[0]) <= _PAT_OTP_STALE_MAX_SEC:
+            return cached[1], cached[2]
+        raise RuntimeError(f"PAT OTP cooldown active ({wait_sec}s remaining)")
+
+    def _parse_ws_url(payload: dict) -> str:
+        data = payload.get("data") if isinstance(payload, dict) else None
+        ws_url = ""
+        if isinstance(data, dict):
+            ws_url = str(data.get("url") or "").strip()
+        if not ws_url:
+            ws_url = str(payload.get("url") or "").strip() if isinstance(payload, dict) else ""
+        return ws_url
+
+    try:
+        payload = _rest_json(
+            "POST",
+            f"https://api.derivws.com/trading/v1/options/accounts/{acct}/otp",
+            token=tok,
+        )
+        ws_url = _parse_ws_url(payload)
+        if not ws_url:
+            raise RuntimeError(f"OTP response missing ws url: {payload}")
+        with _PAT_OTP_LOCK:
+            _PAT_OTP_CACHE[key] = (time.monotonic(), ws_url, acct)
+        return ws_url, acct
+    except RuntimeError as exc:
+        if "(429)" in str(exc) or "429" in str(exc):
+            retry_after = _extract_retry_after_seconds(str(exc), default=30)
+            with _PAT_OTP_LOCK:
+                _PAT_OTP_REST_COOLDOWN_UNTIL[key] = time.monotonic() + min(retry_after, 7200)
+            with _PAT_OTP_LOCK:
+                stale = _PAT_OTP_CACHE.get(key)
+            if stale and (now - stale[0]) <= _PAT_OTP_STALE_MAX_SEC:
+                return stale[1], stale[2]
+        raise
 
 
 def open_ws_for_token(
@@ -182,5 +263,21 @@ def open_ws_for_token(
     tok = str(token or "").strip()
     if tok.startswith("pat_"):
         ws_url, acct = get_pat_ws_url(tok, account_id=account_id)
-        return websocket.create_connection(ws_url, timeout=timeout), False, acct
+        key = _pat_otp_cache_key(tok, acct)
+        now = time.monotonic()
+        with _PAT_OTP_LOCK:
+            blocked_until = float(_PAT_WS_CONNECT_COOLDOWN_UNTIL.get(key, 0.0))
+        if blocked_until > now:
+            wait_sec = int(blocked_until - now)
+            raise RuntimeError(f"PAT WebSocket connect cooldown active ({wait_sec}s remaining)")
+        try:
+            return websocket.create_connection(ws_url, timeout=timeout), False, acct
+        except websocket.WebSocketBadStatusException as exc:
+            msg = str(exc)
+            if "429" in msg or "1015" in msg:
+                retry_after = _extract_retry_after_seconds(msg, default=30)
+                with _PAT_OTP_LOCK:
+                    _PAT_WS_CONNECT_COOLDOWN_UNTIL[key] = time.monotonic() + min(retry_after, 7200)
+                raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from exc
+            raise
     return websocket.create_connection(get_legacy_ws_url(), timeout=timeout), True, None

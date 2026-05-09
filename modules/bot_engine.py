@@ -6,6 +6,7 @@ import json
 import logging
 import threading
 import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import websocket
@@ -14,6 +15,7 @@ from config import API_TOKEN, BASE_STAKE, DERIV_WS_APP_ID, STOP_LOSS, TAKE_PROFI
 
 from modules.deriv_auth import get_legacy_ws_url, open_ws_for_token
 from modules import copy_trading, over_under_strategy_engine, strategy_engine
+from modules.quant_engine import DigitStatsEngine, RiskEngine, TradeJournal
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +57,19 @@ class DerivBot:
         self._trade_alert_seq = 0
         self._last_trade_alert: Optional[Dict[str, object]] = None
         self._last_confluence: Optional[Dict[str, object]] = None
+        self._events_seq = 0
+        self._event_rows: List[Dict[str, object]] = []
 
         self.loss_streak = 0
         self.martingale_step = 0
         self.max_martingale_steps = 2
 
         self.strategy = strategy_engine.load_strategy()
+        self.stats_engine = DigitStatsEngine()
+        self.risk_engine = RiskEngine()
+        self.journal = TradeJournal(Path(__file__).resolve().parent.parent / "trade_journal.db")
+        self._recent_outcomes: List[str] = []
+        self._last_model_decision: Optional[Dict[str, object]] = None
 
         # Warm WebSocket for manual quote/trade (avoids TCP+authorize on every click).
         self._manual_ws_lock = threading.Lock()
@@ -121,11 +130,24 @@ class DerivBot:
                 "strategy": self.strategy,
                 "last_trade_alert": dict(self._last_trade_alert) if self._last_trade_alert else None,
                 "confluence": dict(self._last_confluence) if self._last_confluence else None,
+                "stats": self.stats_engine.snapshot(),
+                "risk": self.risk_engine.snapshot(),
+                "last_model_decision": dict(self._last_model_decision) if self._last_model_decision else None,
             }
 
     def history(self) -> List[Dict[str, object]]:
         with self.lock:
             return list(self.trade_history[-20:])
+
+    def events_since(self, seq: int = 0, limit: int = 120) -> Dict[str, object]:
+        with self.lock:
+            since = int(seq)
+            rows = [x for x in self._event_rows if int(x.get("seq", 0)) > since]
+            rows = rows[-max(1, min(int(limit), 500)) :]
+            return {
+                "events": rows,
+                "latest_seq": int(self._events_seq),
+            }
 
     def update_settings(self, stake: float, take_profit: float, stop_loss: float) -> Dict[str, float]:
         with self.lock:
@@ -245,16 +267,26 @@ class DerivBot:
             self._add_event("Strategy reloaded from disk")
 
     def manual_trade(
-        self, contract_type: str, barrier: int, stake: float, symbol: str = "R_100"
+        self,
+        contract_type: str,
+        barrier: int,
+        stake: float,
+        symbol: str = "R_100",
+        *,
+        duration_ticks: int = 1,
     ) -> Dict[str, object]:
-        """One-off digit trade via a reused WebSocket when possible (faster than new TCP per click). Hybrid pause applies."""
+        """One-off digit trade via a reused WebSocket when possible. Hybrid pause applies to Over/Under only."""
         token = self.api_token
         with self.lock:
             token = self.api_token
-        self._add_event(f"Manual trade requested: {contract_type} barrier={barrier} stake={stake}")
+        ct = contract_type.upper()
+        trade_source = "matches" if ct == "DIGITMATCH" else "manual"
+        self._add_event(
+            f"Manual trade requested: {ct} barrier={barrier} stake={stake} duration_ticks={int(duration_ticks)}"
+        )
         try:
             payout, won, executed, duration_sec, err = self._place_trade_standalone(
-                token, contract_type, barrier, float(stake), symbol
+                token, contract_type, barrier, float(stake), symbol, duration_ticks=int(duration_ticks)
             )
         except Exception as exc:
             logger.exception("Manual trade failed")
@@ -264,7 +296,7 @@ class DerivBot:
             # A brief retry helps in transient pricing/proposal races.
             try:
                 payout, won, executed, duration_sec, err_retry = self._place_trade_standalone(
-                    token, contract_type, barrier, float(stake), symbol
+                    token, contract_type, barrier, float(stake), symbol, duration_ticks=int(duration_ticks)
                 )
                 if not executed:
                     return {"success": False, "error": err_retry or err or "Trade not executed"}
@@ -276,13 +308,14 @@ class DerivBot:
             payout=payout,
             won=won,
             digit=digit,
-            source="manual",
+            source=trade_source,
             contract_type=contract_type,
             duration_sec=duration_sec,
         )
-        with self.lock:
-            self.hybrid_suppress_until = time.time() + 45.0
-        self._add_event("Hybrid: auto-bot signals paused ~45s after manual trade")
+        if ct not in {"DIGITMATCH"}:
+            with self.lock:
+                self.hybrid_suppress_until = time.time() + 45.0
+            self._add_event("Hybrid: auto-bot signals paused ~45s after manual trade")
         return {
             "success": True,
             "won": won,
@@ -292,7 +325,13 @@ class DerivBot:
         }
 
     def manual_quote(
-        self, contract_type: str, barrier: int, stake: float, symbol: str = "R_100"
+        self,
+        contract_type: str,
+        barrier: int,
+        stake: float,
+        symbol: str = "R_100",
+        *,
+        duration_ticks: int = 1,
     ) -> Dict[str, object]:
         """Get pre-trade proposal numbers without buying."""
         with self.lock:
@@ -306,7 +345,7 @@ class DerivBot:
                     "basis": "stake",
                     "contract_type": contract_type,
                     "currency": "USD",
-                    "duration": 1,
+                    "duration": max(1, int(duration_ticks)),
                     "duration_unit": "t",
                     "barrier": str(int(barrier)),
                 }
@@ -348,7 +387,12 @@ class DerivBot:
         self._trade_alert_seq = 0
         self._last_trade_alert = None
         self._last_confluence = None
+        self._events_seq = 0
+        self._event_rows = []
         self._add_event("Bot started")
+        self.risk_engine.start_session(self.balance)
+        self._recent_outcomes = []
+        self._last_model_decision = None
 
     def _run_loop(self) -> None:
         while self._is_running():
@@ -429,6 +473,7 @@ class DerivBot:
             return
 
         digit = self._extract_last_digit(quote)
+        self.stats_engine.update(digit)
         with self.lock:
             self.last_digits.append(digit)
             self.last_digits = self.last_digits[-3:]
@@ -445,7 +490,7 @@ class DerivBot:
 
         with self.lock:
             repeated_digit = self.last_digits[-1]
-            stake = self.current_stake
+            stake = self.risk_engine.suggested_stake(self.balance, self.current_stake)
             signal_digits = list(self.last_digits)
 
         decision = self._build_trade_decision(repeated_digit)
@@ -458,6 +503,15 @@ class DerivBot:
 
         contract_type = decision["contract_type"]
         barrier = decision.get("barrier")
+        allow_trade, risk_reason = self.risk_engine.allow_trade(
+            self.trades_count, self.loss_streak, self.profit, self._recent_outcomes
+        )
+        if not allow_trade:
+            self._add_event(f"Risk gate blocked trade: {risk_reason}")
+            with self.lock:
+                self.last_digits = []
+                self.last_result = "risk_blocked"
+            return
         decision_label = f"{contract_type} barrier {barrier}" if barrier is not None else f"{contract_type}"
         self._add_event(f"Signal {signal_digits} -> {decision_label} stake {stake}")
 
@@ -467,7 +521,13 @@ class DerivBot:
         if contract_type in {"DIGITOVER", "DIGITUNDER"}:
             enforce_confluence = bool(conf_cfg.get("enforce_confluence", False))
             try:
-                cres = over_under_strategy_engine.run_confluence(self.api_token, "R_100", side, conf_cfg)
+                cres = over_under_strategy_engine.run_confluence(
+                    self.api_token,
+                    "R_100",
+                    side,
+                    conf_cfg,
+                    account_id=(self.active_account_id or "").strip() or None,
+                )
             except Exception as exc:
                 logger.exception("Confluence evaluation failed")
                 cres = {
@@ -555,10 +615,18 @@ class DerivBot:
             stake,
             "R_100",
             include_symbol=self._ws_requires_authorize,
+            duration_ticks=1,
         )
 
     def _place_trade_standalone(
-        self, api_token: str, contract_type: str, barrier: int | None, stake: float, symbol: str
+        self,
+        api_token: str,
+        contract_type: str,
+        barrier: int | None,
+        stake: float,
+        symbol: str,
+        *,
+        duration_ticks: int = 1,
     ) -> tuple[float, bool, bool, float, str]:
         with self._manual_ws_lock:
             ws, requires_authorize = self._ensure_manual_trading_ws_unlocked(api_token)
@@ -570,6 +638,7 @@ class DerivBot:
                     stake,
                     symbol,
                     include_symbol=requires_authorize,
+                    duration_ticks=int(duration_ticks),
                 )
             except websocket.WebSocketException:
                 self._invalidate_manual_trading_socket_unlocked()
@@ -584,8 +653,10 @@ class DerivBot:
         symbol: str,
         *,
         include_symbol: bool = True,
+        duration_ticks: int = 1,
     ) -> tuple[float, bool, bool, float, str]:
         started_at = time.time()
+        proposal_sent_at = time.time()
         def _recv_until(expected_msg_type: str, max_reads: int = 32) -> Dict[str, object]:
             last: Dict[str, object] = {}
             for _ in range(max_reads):
@@ -606,7 +677,7 @@ class DerivBot:
             "basis": "stake",
             "contract_type": contract_type,
             "currency": "USD",
-            "duration": 1,
+            "duration": max(1, int(duration_ticks)),
             "duration_unit": "t",
         }
         if include_symbol:
@@ -625,6 +696,22 @@ class DerivBot:
         proposal_id = proposal.get("id")
         if not proposal_id:
             return 0.0, False, False, 0.0, "No proposal id returned"
+        ask_price = float(proposal.get("ask_price", stake) or stake)
+        payout_preview = float(proposal.get("payout", 0.0) or 0.0)
+        with self.lock:
+            execution_cfg = dict((self.strategy.get("execution") or {}))
+        min_ratio = float(execution_cfg.get("min_payout_to_stake", 1.75))
+        max_latency_ms = int(execution_cfg.get("max_proposal_latency_ms", 1500))
+        ratio = (payout_preview / ask_price) if ask_price > 0 else 0.0
+        proposal_latency_ms = int((time.time() - proposal_sent_at) * 1000)
+        if proposal_latency_ms > max_latency_ms:
+            msg = f"proposal latency too high ({proposal_latency_ms}ms > {max_latency_ms}ms)"
+            self._add_event(f"Execution filter: {msg}")
+            return 0.0, False, False, 0.0, msg
+        if ratio < min_ratio:
+            msg = f"payout ratio too low ({ratio:.3f} < {min_ratio:.3f})"
+            self._add_event(f"Execution filter: {msg}")
+            return 0.0, False, False, 0.0, msg
 
         ws.send(json.dumps({"buy": proposal_id, "price": round(stake, 2)}))
         buy_resp = _recv_until("buy")
@@ -698,6 +785,8 @@ class DerivBot:
             }
             self.trade_history.append(entry)
             self.trade_history = self.trade_history[-20:]
+            self._recent_outcomes.append(self.last_result)
+            self._recent_outcomes = self._recent_outcomes[-100:]
             if won:
                 self.loss_streak = 0
                 self.martingale_step = 0
@@ -727,6 +816,25 @@ class DerivBot:
                 )
             except Exception as exc:
                 logger.warning("copy_trading notify failed: %s", exc)
+        try:
+            self.journal.log_trade(
+                {
+                    "ts": time.time(),
+                    "source": source,
+                    "contract_type": contract_type,
+                    "barrier": digit if contract_type in {"DIGITOVER", "DIGITUNDER", "DIGITMATCH"} else None,
+                    "stake": stake,
+                    "payout": payout,
+                    "profit": trade_profit,
+                    "result": "win" if won else "loss",
+                    "digit": digit,
+                    "duration_sec": duration_sec,
+                    "signal_json": json.dumps(self._last_model_decision or {}),
+                    "stats_json": json.dumps(self.stats_engine.snapshot()),
+                }
+            )
+        except Exception as exc:
+            logger.warning("trade journal write failed: %s", exc)
 
     def _check_limits_and_stop_if_needed(self) -> None:
         with self.lock:
@@ -751,6 +859,9 @@ class DerivBot:
         with self.lock:
             self.events.append(f"[{timestamp}] {message}")
             self.events = self.events[-80:]
+            self._events_seq += 1
+            self._event_rows.append({"seq": self._events_seq, "ts": timestamp, "message": message})
+            self._event_rows = self._event_rows[-500:]
         logger.debug("%s", message)
 
     def _push_trade_alert(self, kind: str, title: str, body: str, **extra: object) -> None:
@@ -773,6 +884,12 @@ class DerivBot:
         if strategy.get("condition") != "repeat_3":
             return None
         active_action = str(strategy.get("active_action") or strategy.get("action") or "over_under").strip().lower()
+        portfolio = strategy.get("portfolio") if isinstance(strategy.get("portfolio"), dict) else {}
+        if bool(portfolio.get("enabled", True)):
+            regime_map = portfolio.get("regime_action_map") if isinstance(portfolio.get("regime_action_map"), dict) else {}
+            mapped = str(regime_map.get(self.stats_engine.regime(), active_action)).strip().lower()
+            if mapped in {"over_under", "rise_fall"}:
+                active_action = mapped
         if active_action not in {"over_under", "rise_fall"}:
             return None
         actions = strategy.get("actions") if isinstance(strategy.get("actions"), dict) else {}
@@ -791,8 +908,31 @@ class DerivBot:
         high_trade = str(rules.get("trade", default_trade)).upper()
         low_trade = str(rules.get("else_trade", default_else_trade)).upper()
         selected = high_trade if repeated_digit >= threshold else low_trade
+        probs = self.stats_engine.transition_probabilities(repeated_digit)
+        p_over = sum(v for k, v in probs.items() if k > repeated_digit)
+        p_under = sum(v for k, v in probs.items() if k < repeated_digit)
+        min_prob = float(((strategy.get("model") or {}).get("min_win_probability")) or 0.53)
+        z = self.stats_engine.zscores().get(repeated_digit, 0.0)
         if active_action == "over_under":
             if selected not in {"UNDER", "OVER"}:
+                return None
+            picked_prob = p_under if selected == "UNDER" else p_over
+            model_decision = {
+                "selected_side": selected,
+                "repeated_digit": repeated_digit,
+                "regime": self.stats_engine.regime(),
+                "active_action": active_action,
+                "p_over": round(p_over, 4),
+                "p_under": round(p_under, 4),
+                "z_score_digit": round(z, 3),
+                "min_prob_threshold": round(min_prob, 3),
+            }
+            with self.lock:
+                self._last_model_decision = model_decision
+            if self.stats_engine.ready(120) and picked_prob < min_prob:
+                self._add_event(
+                    f"Probability gate blocked {selected}: p={picked_prob:.3f} < threshold={min_prob:.3f}"
+                )
                 return None
             return {
                 "contract_type": "DIGITUNDER" if selected == "UNDER" else "DIGITOVER",

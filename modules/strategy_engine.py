@@ -51,6 +51,21 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
         "over_under": {"enabled": True, "rules": dict(DEFAULT_ACTION_RULES["over_under"])},
         "rise_fall": {"enabled": False, "rules": dict(DEFAULT_ACTION_RULES["rise_fall"])},
     },
+    "model": {
+        "min_win_probability": 0.53,
+    },
+    "portfolio": {
+        "enabled": True,
+        "regime_action_map": {
+            "volatile": "rise_fall",
+            "range": "over_under",
+            "mixed": "over_under",
+        },
+    },
+    "execution": {
+        "min_payout_to_stake": 1.75,
+        "max_proposal_latency_ms": 1500,
+    },
     "confluence": dict(DEFAULT_CONFLUENCE),
 }
 
@@ -77,7 +92,10 @@ def validate_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
         if not raw_rules and isinstance(source, dict):
             # Allow flat source fallback.
             raw_rules = {k: source.get(k) for k in ("if_digit_greater_equal", "trade", "else_trade")}
-        threshold = int(raw_rules.get("if_digit_greater_equal", default_rules["if_digit_greater_equal"]))
+        raw_threshold = raw_rules.get("if_digit_greater_equal")
+        if raw_threshold is None:
+            raw_threshold = default_rules["if_digit_greater_equal"]
+        threshold = int(raw_threshold)
         threshold = min(max(threshold, 0), 9)
         trade = str(raw_rules.get("trade", default_rules["trade"])).upper()
         else_trade = str(raw_rules.get("else_trade", default_rules["else_trade"])).upper()
@@ -130,6 +148,33 @@ def validate_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
         "actions": actions,
         # Backward compatibility for existing UI/consumers expecting top-level rules.
         "rules": dict(actions[active_action]["rules"]),
+        "model": {
+            "min_win_probability": max(
+                0.5, min(0.75, float((strategy.get("model") or {}).get("min_win_probability", 0.53)))
+            )
+        },
+        "portfolio": {
+            "enabled": bool((strategy.get("portfolio") or {}).get("enabled", True)),
+            "regime_action_map": {
+                "volatile": str(
+                    ((strategy.get("portfolio") or {}).get("regime_action_map") or {}).get("volatile", "rise_fall")
+                ).lower(),
+                "range": str(
+                    ((strategy.get("portfolio") or {}).get("regime_action_map") or {}).get("range", "over_under")
+                ).lower(),
+                "mixed": str(
+                    ((strategy.get("portfolio") or {}).get("regime_action_map") or {}).get("mixed", "over_under")
+                ).lower(),
+            },
+        },
+        "execution": {
+            "min_payout_to_stake": max(
+                1.01, min(10.0, float((strategy.get("execution") or {}).get("min_payout_to_stake", 1.75)))
+            ),
+            "max_proposal_latency_ms": max(
+                50, min(5000, int((strategy.get("execution") or {}).get("max_proposal_latency_ms", 1500)))
+            ),
+        },
         "confluence": conf,
     }
 
