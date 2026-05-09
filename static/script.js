@@ -2509,7 +2509,7 @@ function initMatchesPage() {
 
   function parseRetryAfterMs(text, fallbackMs = 30000) {
     const msg = String(text || "");
-    const m = msg.match(/retry[_- ]?after[=:\s]+(\d+)/i);
+    const m = msg.match(/retry[_ -]?after[=:\s]+(\d+)/i);
     if (!m) return fallbackMs;
     const sec = Number(m[1]);
     if (!Number.isFinite(sec) || sec <= 0) return fallbackMs;
