@@ -1,4 +1,19 @@
-API_TOKEN = "pat_7518267edfb2456b09203416be11b810ae185a67dae764b6bba29f892b901100"
+import os
+
+# -----------------------------------------------------------------------------
+# API credentials — Deriv retired the old app.deriv.com token UI. Use instead:
+#   https://developers.deriv.com/ → Dashboard → register PAT or OAuth app → API tokens (PAT).
+#   Guide: https://developers.deriv.com/docs/workflows
+# Paste a PAT (often pat_…) below or via DERIVBOT_API_TOKEN, or use browser "Login with Deriv".
+#
+# Prefer an environment variable so secrets are not committed:
+#   PowerShell: $env:DERIVBOT_API_TOKEN="your_token"
+#   Persist:    setx DERIVBOT_API_TOKEN "your_token"
+# Optional local fallback (never commit real tokens to git):
+# -----------------------------------------------------------------------------
+_LOCAL_API_TOKEN = ""
+API_TOKEN = (os.environ.get("DERIVBOT_API_TOKEN") or _LOCAL_API_TOKEN).strip()
+
 BASE_STAKE = 1000
 TAKE_PROFIT = 500
 STOP_LOSS = 200

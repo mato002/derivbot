@@ -27,7 +27,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 import config as app_config
 from config import SESSION_SECRET
 from modules import copy_trading, market_data, strategy_engine
-from modules.deriv_auth import list_pat_accounts, open_ws_for_token
+from modules.deriv_auth import is_pat_token, list_pat_accounts, open_ws_for_token
 from modules.bot_engine import DerivBot
 from modules.quant_engine import run_digit_backtest
 
@@ -261,7 +261,7 @@ def _login_with_token(request: Request, token: str) -> RedirectResponse:
     if not tok:
         raise HTTPException(status_code=400, detail="Token is required.")
     bot.set_api_token(tok)
-    if tok.startswith("pat_"):
+    if is_pat_token(tok):
         pat_accounts = list_pat_accounts(tok, force_refresh=True)
         if not pat_accounts:
             raise HTTPException(status_code=401, detail="No options accounts found for this PAT token.")
@@ -307,10 +307,16 @@ def deriv_manual_token_login_page() -> HTMLResponse:
   .hint { color:#4a5568; font-size:.95rem; }
   .err { color:#9b1c1c; margin-top: 10px; }
 </style></head><body>
-  <h1>Login with Deriv API token</h1>
-  <p>Use this when OAuth login is blocked. Paste your Deriv token or PAT token below.</p>
+  <h1>Login with API token</h1>
+  <p><strong>Where to get a token:</strong> sign in at
+    <a href="https://developers.deriv.com/" target="_blank" rel="noopener noreferrer">developers.deriv.com</a>,
+    open <strong>Dashboard</strong>, register a <strong>PAT</strong> or <strong>OAuth</strong> application, then create a
+    <abbr title="Personal Access Token">PAT</abbr> under <strong>API tokens</strong> with the scopes you need
+    (<a href="https://developers.deriv.com/docs/workflows" target="_blank" rel="noopener noreferrer">step-by-step</a>).
+    The old <code>app.deriv.com</code> API token page is no longer the source of truth.</p>
+  <p>Paste a <code>pat_…</code> PAT below, or use <strong>Login with Deriv</strong> in this app for OAuth (no manual PAT).</p>
   <form id="tokenForm">
-    <input id="tokenInput" type="password" autocomplete="off" placeholder="Paste token (e.g. pat_...)" required />
+    <input id="tokenInput" type="password" autocomplete="off" placeholder="PAT from developers.deriv.com (pat_…)" required />
     <button type="submit">Login</button>
   </form>
   <p class="hint">Your token is sent only to this local app session.</p>
@@ -349,7 +355,10 @@ def deriv_manual_token_login_page() -> HTMLResponse:
 
 
 class DerivTokenLoginPayload(BaseModel):
-    token: str = Field(..., description="Deriv API token or PAT token")
+    token: str = Field(
+        ...,
+        description="PAT from developers.deriv.com (pat_…) or OAuth session handled via browser login",
+    )
 
 
 @app.post("/auth/deriv/login-token")
@@ -545,7 +554,7 @@ def _ensure_config_token_session(request: Request) -> dict[str, Any] | None:
         return None
     try:
         bot.set_api_token(CONFIG_API_TOKEN)
-        if CONFIG_API_TOKEN.startswith("pat_"):
+        if is_pat_token(CONFIG_API_TOKEN):
             pat_accounts = list_pat_accounts(CONFIG_API_TOKEN)
             if not pat_accounts:
                 return None
@@ -581,7 +590,7 @@ def _refresh_pat_accounts_if_available(request: Request, *, force: bool = False)
     token = str(current.get("token") or "").strip()
     if not token:
         token = CONFIG_API_TOKEN
-    if not str(token).startswith("pat_"):
+    if not is_pat_token(token):
         return
     if not force:
         last_ok = float(request.session.get("_pat_accounts_list_refresh_ok_ts") or 0.0)
@@ -732,7 +741,7 @@ def deriv_balance(request: Request) -> dict:
         raise HTTPException(status_code=502, detail=f"Unable to fetch balance: {exc}") from exc
     # PAT: avoid list_pat_accounts (GET /options/accounts) here — it rate-limits quickly; WS
     # balance is authoritative and keeps the session copy in sync for the account switcher.
-    if token.startswith("pat_") and selected_id:
+    if is_pat_token(token) and selected_id:
         bal = snapshot.get("balance")
         cur = str(snapshot.get("currency") or "USD").strip() or "USD"
         raw_list = list(request.session.get("deriv_accounts") or [])

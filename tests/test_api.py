@@ -18,9 +18,15 @@ def client(monkeypatch, tmp_path):
     import app as app_module
 
     importlib.reload(app_module)
+    # Smoke tests assume no Deriv API token auto-login; bootstrap from config would confuse /auth/me.
+    monkeypatch.setattr(app_module, "_ensure_config_token_session", lambda request: None)
     from starlette.testclient import TestClient
 
     return TestClient(app_module.app)
+
+
+def _logged_in_dummy():
+    return {"account": "TST", "account_id": "TST", "token": "dummy", "currency": "USD"}
 
 
 def test_pages_return_html(client):
@@ -76,7 +82,10 @@ def test_deriv_select_account_returns_404_without_matching_session(client):
     assert response.status_code == 404
 
 
-def test_start_stop_bot(client):
+def test_start_stop_bot(client, monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda r: _logged_in_dummy())
     start = client.post("/start-bot")
     assert start.status_code == 200
     assert "success" in start.json()
@@ -84,7 +93,10 @@ def test_start_stop_bot(client):
     assert stop.status_code == 200
 
 
-def test_legacy_start_stop_aliases(client):
+def test_legacy_start_stop_aliases(client, monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda r: _logged_in_dummy())
     assert client.post("/start").status_code == 200
     assert client.post("/stop").status_code == 200
 
@@ -145,6 +157,7 @@ def test_manual_trade_bad_contract(client, monkeypatch):
 def test_manual_trade_digit_match_ok(client, monkeypatch):
     import app as app_module
 
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda r: _logged_in_dummy())
     monkeypatch.setattr(
         app_module.bot,
         "manual_trade",
@@ -175,6 +188,8 @@ def test_manual_trade_digit_match_ok(client, monkeypatch):
 def test_manual_trade_mocked(client, monkeypatch):
     import app as app_module
 
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda r: _logged_in_dummy())
+
     monkeypatch.setattr(
         app_module.bot,
         "manual_trade",
@@ -200,6 +215,8 @@ def test_manual_trade_mocked(client, monkeypatch):
 
 def test_market_data_mocked(client, monkeypatch):
     import app as app_module
+
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda r: _logged_in_dummy())
 
     def fake_payload(token, symbol, timeframe="tick", *, account_id=None):
         return {
@@ -229,6 +246,8 @@ def test_market_data_mocked(client, monkeypatch):
 
 def test_market_data_rate_limit_uses_cached_payload(client, monkeypatch):
     import app as app_module
+
+    monkeypatch.setattr(app_module, "_require_deriv_session", lambda r: _logged_in_dummy())
 
     cached_payload = {
         "symbol": "R_100",

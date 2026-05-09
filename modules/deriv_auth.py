@@ -13,6 +13,12 @@ import websocket
 
 import config as app_config
 
+
+def is_pat_token(token: str | None) -> bool:
+    """True if token is a Trading API Personal Access Token (OTP websocket path)."""
+    return str(token or "").strip().startswith("pat_")
+
+
 _PAT_ACCOUNTS_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _PAT_ACCOUNTS_LOCK = Lock()
 _PAT_ACCOUNTS_TTL_SEC = 300.0
@@ -23,7 +29,7 @@ _PAT_LIST_FETCH_GUARD = Lock()
 # PAT OTP is expensive and rate-limited; cache ws URL per token+account.
 _PAT_OTP_CACHE: dict[str, tuple[float, str, str]] = {}
 _PAT_OTP_LOCK = Lock()
-_PAT_OTP_TTL_SEC = 45.0
+_PAT_OTP_TTL_SEC = 120.0
 _PAT_OTP_STALE_MAX_SEC = 180.0
 _PAT_WS_CONNECT_COOLDOWN_UNTIL: dict[str, float] = {}
 _PAT_OTP_REST_COOLDOWN_UNTIL: dict[str, float] = {}
@@ -261,7 +267,7 @@ def open_ws_for_token(
 ) -> tuple[websocket.WebSocket, bool, str | None]:
     """Return (ws, requires_authorize, account_hint)."""
     tok = str(token or "").strip()
-    if tok.startswith("pat_"):
+    if is_pat_token(tok):
         ws_url, acct = get_pat_ws_url(tok, account_id=account_id)
         key = _pat_otp_cache_key(tok, acct)
 

@@ -63,7 +63,7 @@
       <div class="trading-account-bar">
         <span class="connection-dot" id="connectionStatusDot"></span>
         <span class="connection-text">API Connected</span>
-        <a href="https://app.deriv.com/cashier/deposit" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Deposit</a>
+        <a href="https://deriv.com/" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Deposit</a>
         <a id="headerWalletLoginBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login with Deriv</a>
         <button id="headerApiTokenBtn" type="button" class="btn btn-blue">API Token</button>
         <a id="headerSignupBtn" href="https://deriv.com/signup/" class="btn btn-start" target="_blank" rel="noopener noreferrer">Sign Up</a>
@@ -107,15 +107,18 @@
     {% block app_footer %}{% endblock %}
     <div id="apiTokenModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Login with API token">
       <div class="builder-modal-card">
-        <h3>Login with API Token</h3>
-        <p class="subtle small">Enter your Deriv API token or PAT token to sign in directly.</p>
+        <h3>Login with API token</h3>
+        <p class="subtle small">
+          Create a <strong>PAT</strong> (Personal Access Token, often <code>pat_…</code>) under
+          <strong>developers.deriv.com → Dashboard → API tokens</strong>, or use <strong>Login with Deriv</strong> for OAuth.
+        </p>
         <label>
-          API Token
-          <input id="apiTokenInput" type="password" autocomplete="off" placeholder="Paste token (e.g. pat_...)" />
+          Token (PAT)
+          <input id="apiTokenInput" type="password" autocomplete="off" placeholder="PAT from developers.deriv.com" />
         </label>
         <p class="subtle small" style="margin-top:8px;">
-          You can create tokens from
-          <a href="https://app.deriv.com/account/api-token" target="_blank" rel="noopener noreferrer">Deriv API Token Settings</a>.
+          Create one here:
+          <a href="https://developers.deriv.com/docs/workflows" target="_blank" rel="noopener noreferrer">Deriv developers (Dashboard → API tokens / PAT)</a>.
         </p>
         <p id="apiTokenError" class="risk-warning hidden" style="margin-top:8px;"></p>
         <div class="button-row" style="margin-top:10px;">

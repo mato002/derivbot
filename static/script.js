@@ -68,33 +68,6 @@ function setLoading(button, isLoading) {
   }
 }
 
-function compactEventFeed(events) {
-  const rows = Array.isArray(events) ? events : [];
-  const out = [];
-  let lastCooldownTs = 0;
-  rows.forEach((raw) => {
-    const text = String(raw || "");
-    const lower = text.toLowerCase();
-    const isReconnect = lower.includes("reconnecting...");
-    const isCooldown = lower.includes("cooldown active");
-    if (isReconnect) {
-      // Cooldown errors already imply reconnect behavior; suppress noisy duplicates.
-      return;
-    }
-    if (isCooldown) {
-      const msgOnly = text.replace(/^\[[^\]]+\]\s*/, "");
-      const secMatch = /(\d+)\s*s?\s*remaining/i.exec(msgOnly);
-      const remaining = secMatch ? Number(secMatch[1]) : NaN;
-      // Keep cooldown updates roughly every 20s (or when parser fails).
-      const bucket = Number.isFinite(remaining) ? Math.floor(remaining / 20) : Date.now();
-      if (bucket === lastCooldownTs) return;
-      lastCooldownTs = bucket;
-    }
-    out.push(text);
-  });
-  return out.slice(-12);
-}
-
 function initSectionTabs() {
   const rows = document.querySelectorAll(".section-tabs");
   rows.forEach((row) => {
@@ -1425,7 +1398,7 @@ function initDashboardPage() {
     if (netPlEl) netPlEl.textContent = `$${net.toFixed(2)}`;
 
     eventsListEl.innerHTML = "";
-    compactEventFeed(status.events ?? []).forEach((eventText) => {
+    (status.events ?? []).forEach((eventText) => {
       const li = document.createElement("li");
       li.textContent = eventText;
       eventsListEl.appendChild(li);

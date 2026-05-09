@@ -28,9 +28,21 @@ Open in browser:
 http://127.0.0.1:8000
 ```
 
-## Token login fallback (when OAuth is blocked)
+## Deriv tokens (after `app.deriv.com` changes)
 
-Open:
+Official place: **`https://developers.deriv.com/`** → sign in → **Dashboard** → register a **PAT** or **OAuth** app → create a PAT under **API tokens** ([workflows guide](https://developers.deriv.com/docs/workflows)).
+
+Set the PAT for the bot (environment preferred):
+
+```powershell
+setx DERIVBOT_API_TOKEN "paste_pat_token_here"
+```
+
+Restart the terminal, then start uvicorn. Or paste into `config.py` as `_LOCAL_API_TOKEN` locally (never commit secrets).
+
+Alternatively use **Login with Deriv** (OAuth) in the app UI so you don’t manage a PAT.
+
+Use **API Token** in the header (modal) or open the manual login page:
 
 ```text
 http://127.0.0.1:8000/auth/deriv/manual

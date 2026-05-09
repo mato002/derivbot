@@ -14,7 +14,7 @@ import websocket
 
 from config import API_TOKEN, BASE_STAKE, DERIV_WS_APP_ID, STOP_LOSS, TAKE_PROFIT
 
-from modules.deriv_auth import get_legacy_ws_url, open_ws_for_token
+from modules.deriv_auth import get_legacy_ws_url, is_pat_token, list_pat_accounts, open_ws_for_token
 from modules import copy_trading, over_under_strategy_engine, strategy_engine
 from modules.quant_engine import DigitStatsEngine, RiskEngine, TradeJournal
 
@@ -96,8 +96,6 @@ class DerivBot:
         self._manual_ws_token: Optional[str] = None
         self._manual_ws_requires_authorize = True
         self._reconnect_not_before = 0.0
-        self._last_event_message = ""
-        self._last_event_ts = 0.0
 
     def start(self) -> bool:
         with self.lock:
@@ -241,6 +239,32 @@ class DerivBot:
         return ws, requires_authorize
 
     def fetch_authorized_balance(self) -> Dict[str, object]:
+        tok = str(self.api_token or "").strip()
+        if not tok:
+            raise RuntimeError("No API token")
+        # PAT: balance + account listing are on REST — opening a websocket here for every poll
+        # consumes OTP connects and triggers Deriv PAT WebSocket cooldown (breaks trading).
+        if is_pat_token(tok):
+            acct_needed = str(self.active_account_id or "").strip()
+            rows = list_pat_accounts(tok, force_refresh=False)
+            if not rows:
+                raise RuntimeError("No Deriv options accounts for PAT")
+            pick = None
+            if acct_needed:
+                for r in rows:
+                    rid = str(r.get("account_id") or r.get("account") or "").strip()
+                    if rid == acct_needed:
+                        pick = r
+                        break
+            if pick is None:
+                pick = next((r for r in rows if str(r.get("kind")) == "demo"), rows[0])
+            account_id = str(pick.get("account_id") or pick.get("account") or "").strip() or acct_needed
+            return {
+                "account": account_id or "ACCOUNT",
+                "currency": str(pick.get("currency") or "USD").strip() or "USD",
+                "balance": round(float(pick.get("balance", 0.0)), 2),
+            }
+
         ws, requires_authorize, account_hint = open_ws_for_token(
             self.api_token,
             timeout=15,
@@ -271,6 +295,19 @@ class DerivBot:
                 ws.close()
             except Exception:
                 pass
+
+    def _prime_pat_balance(self, ws: websocket.WebSocket) -> None:
+        """PAT OTP sockets skip authorize(); pull balance once for risk/stake sizing."""
+        try:
+            ws.send(json.dumps({"balance": 1}))
+            response = json.loads(ws.recv())
+            if "error" in response:
+                raise RuntimeError(response["error"].get("message", "balance failed"))
+            bal_payload = response.get("balance") or {}
+            with self.lock:
+                self.balance = float(bal_payload.get("balance", self.balance))
+        except Exception as exc:
+            logger.warning("PAT balance priming failed (continuing ticks): %s", exc)
 
     def save_strategy(self, strategy: Dict[str, object]) -> Dict[str, object]:
         validated = strategy_engine.save_strategy(strategy)
@@ -432,12 +469,15 @@ class DerivBot:
                 self._add_event(f"Session error: {msg}")
                 logger.exception("Session error")
                 wait_sec = _cooldown_wait_seconds(msg)
-                is_cooldown_err = ("cooldown" in msg.lower()) or ("rate-limit" in msg.lower()) or ("429" in msg)
+                is_pat_ws_cooldown = "PAT WebSocket connect cooldown" in msg
+                is_cooldown_err = (
+                    ("cooldown" in msg.lower()) or ("rate-limit" in msg.lower()) or ("429" in msg)
+                )
                 if wait_sec or is_cooldown_err:
                     if not wait_sec:
-                        wait_sec = 30
-                    reconnect_sleep = min(120, max(5, wait_sec))
-                    self._add_event(f"Reconnect delayed: cooldown active ({reconnect_sleep}s)")
+                        wait_sec = 120 if is_pat_ws_cooldown else 30
+                    reconnect_sleep = min(max(30, wait_sec), 3600)
+                    self._add_event(f"Backoff {reconnect_sleep}s (cooldown)")
                     with self.lock:
                         self._reconnect_not_before = time.time() + reconnect_sleep
                 # Disabled/invalid accounts should not spin in reconnect loops.
@@ -462,6 +502,8 @@ class DerivBot:
             self._session_account_hint = account_hint
         try:
             self._authorize(ws)
+            if not requires_authorize:
+                self._prime_pat_balance(ws)
             self._subscribe_ticks(ws)
             while self._is_running():
                 raw = ws.recv()
@@ -894,22 +936,12 @@ class DerivBot:
 
     def _add_event(self, message: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
-        now = time.time()
         with self.lock:
-            # Collapse noisy reconnect/cooldown repeats into a readable stream.
-            if (
-                message == self._last_event_message
-                and (now - float(self._last_event_ts or 0.0)) < 3.0
-                and ("Reconnecting" in message or "cooldown" in message.lower())
-            ):
-                return
             self.events.append(f"[{timestamp}] {message}")
             self.events = self.events[-80:]
             self._events_seq += 1
             self._event_rows.append({"seq": self._events_seq, "ts": timestamp, "message": message})
             self._event_rows = self._event_rows[-500:]
-            self._last_event_message = message
-            self._last_event_ts = now
         logger.debug("%s", message)
 
     def _push_trade_alert(self, kind: str, title: str, body: str, **extra: object) -> None:

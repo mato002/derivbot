@@ -10,12 +10,23 @@ from typing import Any, Dict, List, Sequence
 
 import websocket
 
-from modules.deriv_auth import open_ws_for_token
+from modules.deriv_auth import is_pat_token, open_ws_for_token
 
 logger = logging.getLogger(__name__)
 _MARKET_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
 _MARKET_CACHE_LOCK = Lock()
-_MARKET_CACHE_TTL_SEC = 90.0
+_MARKET_CACHE_TTL_SEC = 120.0
+
+# PAT tick history needs the OTP websocket; cache responses so charts/confluence do not
+# open a new PAT connection every poll (that exhausts Deriv connect limits).
+_PAT_TICKS_CACHE: dict[str, tuple[float, List[Dict[str, Any]]]] = {}
+_PAT_TICKS_CACHE_LOCK = Lock()
+_PAT_TICKS_CACHE_TTL_SEC = 180.0
+
+
+def _pat_ticks_cache_key(api_token: str, symbol: str, count: int, account_id: str | None) -> str:
+    tok = str(api_token or "").strip()
+    return f"{tok}\x00{symbol}\x00{count}\x00{(account_id or '').strip()}"
 
 
 def _sma(values: Sequence[float], period: int) -> List[float | None]:
@@ -54,6 +65,15 @@ def fetch_ticks_history(
     api_token: str, symbol: str, count: int = 120, *, account_id: str | None = None
 ) -> List[Dict[str, Any]]:
     """Pull recent ticks via Deriv WebSocket ticks_history."""
+    tok = str(api_token or "").strip()
+    pat_key: str | None = None
+    if is_pat_token(tok):
+        pat_key = _pat_ticks_cache_key(tok, symbol, count, account_id)
+        with _PAT_TICKS_CACHE_LOCK:
+            cached = _PAT_TICKS_CACHE.get(pat_key)
+            if cached and (time_module.monotonic() - cached[0]) <= _PAT_TICKS_CACHE_TTL_SEC:
+                return list(cached[1])
+
     ws, requires_authorize, _account_hint = open_ws_for_token(
         api_token, timeout=20, account_id=account_id
     )
@@ -107,6 +127,9 @@ def fetch_ticks_history(
             ws.close()
         except Exception:
             pass
+    if pat_key is not None and ticks:
+        with _PAT_TICKS_CACHE_LOCK:
+            _PAT_TICKS_CACHE[pat_key] = (time_module.monotonic(), list(ticks))
     return ticks
 
 
