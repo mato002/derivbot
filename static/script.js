@@ -68,6 +68,33 @@ function setLoading(button, isLoading) {
   }
 }
 
+function compactEventFeed(events) {
+  const rows = Array.isArray(events) ? events : [];
+  const out = [];
+  let lastCooldownTs = 0;
+  rows.forEach((raw) => {
+    const text = String(raw || "");
+    const lower = text.toLowerCase();
+    const isReconnect = lower.includes("reconnecting...");
+    const isCooldown = lower.includes("cooldown active");
+    if (isReconnect) {
+      // Cooldown errors already imply reconnect behavior; suppress noisy duplicates.
+      return;
+    }
+    if (isCooldown) {
+      const msgOnly = text.replace(/^\[[^\]]+\]\s*/, "");
+      const secMatch = /(\d+)\s*s?\s*remaining/i.exec(msgOnly);
+      const remaining = secMatch ? Number(secMatch[1]) : NaN;
+      // Keep cooldown updates roughly every 20s (or when parser fails).
+      const bucket = Number.isFinite(remaining) ? Math.floor(remaining / 20) : Date.now();
+      if (bucket === lastCooldownTs) return;
+      lastCooldownTs = bucket;
+    }
+    out.push(text);
+  });
+  return out.slice(-12);
+}
+
 function initSectionTabs() {
   const rows = document.querySelectorAll(".section-tabs");
   rows.forEach((row) => {
@@ -87,12 +114,23 @@ function initThemeToggle() {
   const btn = document.getElementById("themeToggleBtn");
   if (!btn) return;
   const key = "derivbot_theme_pref";
+  const root = document.documentElement;
+  const syncTheme = (light) => {
+    root.classList.toggle("trading-theme-light", light);
+    document.body.classList.toggle("trading-theme-light", light);
+    btn.textContent = light ? "☀" : "◐";
+    btn.setAttribute("aria-label", light ? "Switch to dark mode" : "Switch to light mode");
+    btn.title = light ? "Switch to dark mode" : "Switch to light mode";
+  };
   try {
     const saved = localStorage.getItem(key);
-    if (saved === "light") document.body.classList.add("trading-theme-light");
+    syncTheme(saved === "light");
   } catch (_e) {}
   btn.addEventListener("click", () => {
-    const light = document.body.classList.toggle("trading-theme-light");
+    const light = !root.classList.contains("trading-theme-light");
+    syncTheme(light);
+    root.classList.add("theme-transition");
+    window.setTimeout(() => root.classList.remove("theme-transition"), 250);
     try {
       localStorage.setItem(key, light ? "light" : "dark");
     } catch (_e) {}
@@ -335,6 +373,13 @@ async function refreshAuthState() {
   const derivAccountBalanceEl = document.getElementById("derivBalance");
   const dashLoginStatusEl = document.getElementById("dashLoginStatus");
   const loginBtn = document.getElementById("loginDerivBtn");
+  const headerLoginBtn = document.getElementById("headerWalletLoginBtn");
+  const headerApiTokenBtn = document.getElementById("headerApiTokenBtn");
+  const headerSignupBtn = document.getElementById("headerSignupBtn");
+  const accessMenuBtn = document.getElementById("accessMenuBtn");
+  const accessMenuLoginBtn = document.getElementById("accessMenuLoginBtn");
+  const accessMenuApiTokenBtn = document.getElementById("accessMenuApiTokenBtn");
+  const accessMenuSignupBtn = document.getElementById("accessMenuSignupBtn");
   const chipEl = document.getElementById("headerWalletBalance");
 
   function setDerivAccountMetric(text) {
@@ -366,6 +411,10 @@ async function refreshAuthState() {
       }
       if (dashLoginStatusEl) dashLoginStatusEl.textContent = `${tag} account`;
       loginBtn.classList.add("hidden");
+      headerLoginBtn?.classList.add("hidden");
+      headerApiTokenBtn?.classList.add("hidden");
+      headerSignupBtn?.classList.add("hidden");
+      accessMenuBtn?.classList.add("hidden");
       try {
         const balanceData = await requestJson("/auth/deriv/balance");
         const balance = Number(balanceData.balance?.balance ?? 0).toFixed(2);
@@ -393,6 +442,10 @@ async function refreshAuthState() {
       }
       if (dashLoginStatusEl) dashLoginStatusEl.textContent = "Disconnected";
       loginBtn.classList.remove("hidden");
+      headerLoginBtn?.classList.remove("hidden");
+      headerApiTokenBtn?.classList.remove("hidden");
+      headerSignupBtn?.classList.remove("hidden");
+      accessMenuBtn?.classList.remove("hidden");
       headerWalletText = "--";
       if (derivAccountBalanceEl) {
         setDerivAccountMetric("Deriv balance: --");
@@ -408,6 +461,10 @@ async function refreshAuthState() {
     }
     if (dashLoginStatusEl) dashLoginStatusEl.textContent = "Auth unavailable";
     headerWalletText = "--";
+    headerLoginBtn?.classList.remove("hidden");
+    headerApiTokenBtn?.classList.remove("hidden");
+    headerSignupBtn?.classList.remove("hidden");
+    accessMenuBtn?.classList.remove("hidden");
     if (derivAccountBalanceEl) {
       setDerivAccountMetric("Deriv balance: unavailable");
     }
@@ -425,6 +482,16 @@ wireHeaderWalletMenuOnce();
 function initAuthButtons() {
   const loginBtn = document.getElementById("loginDerivBtn");
   const headerLoginBtn = document.getElementById("headerWalletLoginBtn");
+  const headerApiTokenBtn = document.getElementById("headerApiTokenBtn");
+  const accessMenuBtn = document.getElementById("accessMenuBtn");
+  const accessMenuDropdown = document.getElementById("accessMenuDropdown");
+  const accessMenuLoginBtn = document.getElementById("accessMenuLoginBtn");
+  const accessMenuApiTokenBtn = document.getElementById("accessMenuApiTokenBtn");
+  const apiTokenModal = document.getElementById("apiTokenModal");
+  const apiTokenInput = document.getElementById("apiTokenInput");
+  const apiTokenError = document.getElementById("apiTokenError");
+  const apiTokenCancelBtn = document.getElementById("apiTokenCancelBtn");
+  const apiTokenSubmitBtn = document.getElementById("apiTokenSubmitBtn");
   const onLogin = () => {
     window.location.href = "/auth/deriv/login";
   };
@@ -435,6 +502,85 @@ function initAuthButtons() {
   if (headerLoginBtn && !headerLoginBtn.dataset.authBound) {
     headerLoginBtn.addEventListener("click", onLogin);
     headerLoginBtn.dataset.authBound = "1";
+  }
+  if (accessMenuLoginBtn && !accessMenuLoginBtn.dataset.authBound) {
+    accessMenuLoginBtn.addEventListener("click", onLogin);
+    accessMenuLoginBtn.dataset.authBound = "1";
+  }
+  if (accessMenuBtn && accessMenuDropdown && !accessMenuBtn.dataset.authBound) {
+    accessMenuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      accessMenuDropdown.classList.toggle("hidden");
+    });
+    document.addEventListener("click", (e) => {
+      if (!accessMenuDropdown.contains(e.target) && !accessMenuBtn.contains(e.target)) {
+        accessMenuDropdown.classList.add("hidden");
+      }
+    });
+    accessMenuBtn.dataset.authBound = "1";
+  }
+
+  if (headerApiTokenBtn && apiTokenModal && !headerApiTokenBtn.dataset.authBound) {
+    const closeModal = () => {
+      apiTokenModal.classList.add("hidden");
+      accessMenuDropdown?.classList.add("hidden");
+      if (apiTokenError) {
+        apiTokenError.classList.add("hidden");
+        apiTokenError.textContent = "";
+      }
+      if (apiTokenInput) apiTokenInput.value = "";
+    };
+    const openModal = () => {
+      apiTokenModal.classList.remove("hidden");
+      accessMenuDropdown?.classList.add("hidden");
+      if (apiTokenInput) apiTokenInput.focus();
+    };
+    headerApiTokenBtn.addEventListener("click", openModal);
+    accessMenuApiTokenBtn?.addEventListener("click", openModal);
+    apiTokenCancelBtn?.addEventListener("click", closeModal);
+    apiTokenModal.addEventListener("click", (e) => {
+      if (e.target === apiTokenModal) closeModal();
+    });
+    apiTokenSubmitBtn?.addEventListener("click", async () => {
+      const token = String(apiTokenInput?.value || "").trim();
+      if (!token) return;
+      setLoading(apiTokenSubmitBtn, true);
+      try {
+        const res = await fetch("/auth/deriv/login-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!res.ok) {
+          let msg = "Token login failed";
+          try {
+            const data = await res.json();
+            msg = data?.detail || msg;
+          } catch (_e) {}
+          throw new Error(msg);
+        }
+        closeModal();
+        showToast("Token login successful");
+        await refreshAuthState();
+        window.location.reload();
+      } catch (error) {
+        if (apiTokenError) {
+          apiTokenError.textContent = error.message || "Token login failed";
+          apiTokenError.classList.remove("hidden");
+        }
+      } finally {
+        setLoading(apiTokenSubmitBtn, false);
+      }
+    });
+    apiTokenInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        apiTokenSubmitBtn?.click();
+      } else if (e.key === "Escape") {
+        closeModal();
+      }
+    });
+    headerApiTokenBtn.dataset.authBound = "1";
   }
 }
 
@@ -1279,7 +1425,7 @@ function initDashboardPage() {
     if (netPlEl) netPlEl.textContent = `$${net.toFixed(2)}`;
 
     eventsListEl.innerHTML = "";
-    (status.events ?? []).forEach((eventText) => {
+    compactEventFeed(status.events ?? []).forEach((eventText) => {
       const li = document.createElement("li");
       li.textContent = eventText;
       eventsListEl.appendChild(li);

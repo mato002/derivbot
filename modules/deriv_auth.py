@@ -264,14 +264,18 @@ def open_ws_for_token(
     if tok.startswith("pat_"):
         ws_url, acct = get_pat_ws_url(tok, account_id=account_id)
         key = _pat_otp_cache_key(tok, acct)
-        now = time.monotonic()
-        with _PAT_OTP_LOCK:
-            blocked_until = float(_PAT_WS_CONNECT_COOLDOWN_UNTIL.get(key, 0.0))
-        if blocked_until > now:
-            wait_sec = int(blocked_until - now)
-            raise RuntimeError(f"PAT WebSocket connect cooldown active ({wait_sec}s remaining)")
+
+        def _connect_once(url: str) -> websocket.WebSocket:
+            now = time.monotonic()
+            with _PAT_OTP_LOCK:
+                blocked_until = float(_PAT_WS_CONNECT_COOLDOWN_UNTIL.get(key, 0.0))
+            if blocked_until > now:
+                wait_sec = int(blocked_until - now)
+                raise RuntimeError(f"PAT WebSocket connect cooldown active ({wait_sec}s remaining)")
+            return websocket.create_connection(url, timeout=timeout)
+
         try:
-            return websocket.create_connection(ws_url, timeout=timeout), False, acct
+            return _connect_once(ws_url), False, acct
         except websocket.WebSocketBadStatusException as exc:
             msg = str(exc)
             if "429" in msg or "1015" in msg:
@@ -279,5 +283,32 @@ def open_ws_for_token(
                 with _PAT_OTP_LOCK:
                     _PAT_WS_CONNECT_COOLDOWN_UNTIL[key] = time.monotonic() + min(retry_after, 7200)
                 raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from exc
+
+            # OTP URLs can expire earlier than cache TTL. If Deriv returns 401/invalid OTP
+            # during the WS handshake, purge OTP cache and retry once with a fresh OTP URL.
+            lower_msg = msg.lower()
+            otp_expired = (
+                "401" in msg
+                or "invalid or expired otp" in lower_msg
+                or "invalid otp" in lower_msg
+                or "expired otp" in lower_msg
+            )
+            if otp_expired:
+                with _PAT_OTP_LOCK:
+                    _PAT_OTP_CACHE.pop(key, None)
+                    _PAT_OTP_REST_COOLDOWN_UNTIL.pop(key, None)
+                fresh_url, fresh_acct = get_pat_ws_url(tok, account_id=acct)
+                fresh_key = _pat_otp_cache_key(tok, fresh_acct)
+                try:
+                    return websocket.create_connection(fresh_url, timeout=timeout), False, fresh_acct
+                except websocket.WebSocketBadStatusException as retry_exc:
+                    retry_msg = str(retry_exc)
+                    if "429" in retry_msg or "1015" in retry_msg:
+                        retry_after = _extract_retry_after_seconds(retry_msg, default=30)
+                        with _PAT_OTP_LOCK:
+                            _PAT_WS_CONNECT_COOLDOWN_UNTIL[fresh_key] = time.monotonic() + min(retry_after, 7200)
+                        raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from retry_exc
+                    raise RuntimeError(f"PAT WebSocket handshake failed after OTP refresh: {retry_msg}") from retry_exc
+
             raise
     return websocket.create_connection(get_legacy_ws_url(), timeout=timeout), True, None

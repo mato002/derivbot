@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from pathlib import Path
@@ -23,6 +24,24 @@ logger = logging.getLogger(__name__)
 def _deriv_ws_url() -> str:
     _ = DERIV_WS_APP_ID  # keep config import explicit for diagnostics/UI
     return get_legacy_ws_url()
+
+
+def _cooldown_wait_seconds(message: str) -> int | None:
+    """Extract cooldown seconds from Deriv auth/WS errors."""
+    msg = str(message or "")
+    m = re.search(r"\((\d+)\s*s?\s*remaining\)", msg, flags=re.IGNORECASE)
+    if m:
+        try:
+            return max(1, int(m.group(1)))
+        except Exception:
+            return None
+    m = re.search(r"(\d+)\s*s?\s*remaining", msg, flags=re.IGNORECASE)
+    if m:
+        try:
+            return max(1, int(m.group(1)))
+        except Exception:
+            return None
+    return None
 
 
 class DerivBot:
@@ -76,6 +95,9 @@ class DerivBot:
         self._manual_ws: Optional[websocket.WebSocket] = None
         self._manual_ws_token: Optional[str] = None
         self._manual_ws_requires_authorize = True
+        self._reconnect_not_before = 0.0
+        self._last_event_message = ""
+        self._last_event_ts = 0.0
 
     def start(self) -> bool:
         with self.lock:
@@ -396,12 +418,28 @@ class DerivBot:
 
     def _run_loop(self) -> None:
         while self._is_running():
+            now = time.time()
+            with self.lock:
+                not_before = float(self._reconnect_not_before or 0.0)
+            if not_before > now:
+                time.sleep(min(5.0, not_before - now))
+                continue
+            reconnect_sleep = 2
             try:
                 self._run_session()
             except Exception as exc:
                 msg = str(exc)
                 self._add_event(f"Session error: {msg}")
                 logger.exception("Session error")
+                wait_sec = _cooldown_wait_seconds(msg)
+                is_cooldown_err = ("cooldown" in msg.lower()) or ("rate-limit" in msg.lower()) or ("429" in msg)
+                if wait_sec or is_cooldown_err:
+                    if not wait_sec:
+                        wait_sec = 30
+                    reconnect_sleep = min(120, max(5, wait_sec))
+                    self._add_event(f"Reconnect delayed: cooldown active ({reconnect_sleep}s)")
+                    with self.lock:
+                        self._reconnect_not_before = time.time() + reconnect_sleep
                 # Disabled/invalid accounts should not spin in reconnect loops.
                 if "Account is disabled" in msg or "Authorization failed" in msg:
                     with self.lock:
@@ -410,7 +448,7 @@ class DerivBot:
                     break
             if self._is_running():
                 self._add_event("Reconnecting...")
-                time.sleep(2)
+                time.sleep(reconnect_sleep)
 
     def _run_session(self) -> None:
         ws, requires_authorize, account_hint = open_ws_for_token(
@@ -856,12 +894,22 @@ class DerivBot:
 
     def _add_event(self, message: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
+        now = time.time()
         with self.lock:
+            # Collapse noisy reconnect/cooldown repeats into a readable stream.
+            if (
+                message == self._last_event_message
+                and (now - float(self._last_event_ts or 0.0)) < 3.0
+                and ("Reconnecting" in message or "cooldown" in message.lower())
+            ):
+                return
             self.events.append(f"[{timestamp}] {message}")
             self.events = self.events[-80:]
             self._events_seq += 1
             self._event_rows.append({"seq": self._events_seq, "ts": timestamp, "message": message})
             self._event_rows = self._event_rows[-500:]
+            self._last_event_message = message
+            self._last_event_ts = now
         logger.debug("%s", message)
 
     def _push_trade_alert(self, kind: str, title: str, body: str, **extra: object) -> None:

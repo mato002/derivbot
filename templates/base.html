@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Deriv Platform{% endblock %}</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("derivbot_theme_pref");
+          if (t === "light") {
+            document.documentElement.classList.add("trading-theme-light");
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="/static/style.css" />
     {% block extra_head %}{% endblock %}
   </head>
@@ -29,11 +39,11 @@
       <div class="app-preloader__glow" aria-hidden="true"></div>
       <div class="app-preloader__particles" aria-hidden="true"></div>
       <div class="app-preloader__panel">
-        <h1 id="preloaderTitle" class="app-preloader__logo">DERIVBOT PRO</h1>
-        <p class="app-preloader__site" aria-label="Site address">Automated Trading Terminal</p>
+        <h1 id="preloaderTitle" class="app-preloader__logo">MATECHTRADERS</h1>
+        <p class="app-preloader__site" aria-label="Site address">matechtraders.site</p>
         <p class="app-preloader__welcome">
-          Launching <strong class="app-preloader__brand">DerivBot Pro</strong>. Professional binary automation for
-          demo and real accounts.
+          Welcome to <strong class="app-preloader__brand">Matechtraders</strong>. Trade smarter. Trade faster. Trade
+          Deriv binary options like a pro.
         </p>
         <div class="app-preloader__track" aria-hidden="true">
           <div id="preloaderBarFill" class="app-preloader__bar" style="width: 0%"></div>
@@ -44,10 +54,10 @@
 
     <header class="trading-top-header">
       <div class="trading-brand">
-        <span class="trading-brand__logo">DB</span>
+        <span class="trading-brand__logo">MT</span>
         <div>
-          <strong>DerivBot Pro</strong>
-          <span>Automation Platform</span>
+          <strong class="trading-brand__name">Matechtraders</strong>
+          <span class="trading-brand__tagline">Automation Platform</span>
         </div>
       </div>
       <div class="trading-account-bar">
@@ -55,7 +65,14 @@
         <span class="connection-text">API Connected</span>
         <a href="https://app.deriv.com/cashier/deposit" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Deposit</a>
         <a id="headerWalletLoginBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login with Deriv</a>
-        <a href="https://deriv.com/signup/" class="btn btn-start" target="_blank" rel="noopener noreferrer">Sign Up</a>
+        <button id="headerApiTokenBtn" type="button" class="btn btn-blue">API Token</button>
+        <a id="headerSignupBtn" href="https://deriv.com/signup/" class="btn btn-start" target="_blank" rel="noopener noreferrer">Sign Up</a>
+        <button id="accessMenuBtn" type="button" class="btn btn-blue">Access ▾</button>
+        <div id="accessMenuDropdown" class="header-wallet-menu hidden">
+          <a id="accessMenuLoginBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
+          <button id="accessMenuApiTokenBtn" type="button" class="btn btn-blue">Login with API Token</button>
+          <a id="accessMenuSignupBtn" class="btn btn-start" href="https://deriv.com/signup/" target="_blank" rel="noopener noreferrer">Sign Up</a>
+        </div>
         <button type="button" class="wallet-chip" id="headerWalletBtn" aria-haspopup="menu" aria-expanded="false">
           <span class="wallet-chip__logo" aria-hidden="true">D</span>
           <span id="headerWalletBalance" class="wallet-chip__amt">--</span>
@@ -88,6 +105,25 @@
     </div>
 
     {% block app_footer %}{% endblock %}
+    <div id="apiTokenModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Login with API token">
+      <div class="builder-modal-card">
+        <h3>Login with API Token</h3>
+        <p class="subtle small">Enter your Deriv API token or PAT token to sign in directly.</p>
+        <label>
+          API Token
+          <input id="apiTokenInput" type="password" autocomplete="off" placeholder="Paste token (e.g. pat_...)" />
+        </label>
+        <p class="subtle small" style="margin-top:8px;">
+          You can create tokens from
+          <a href="https://app.deriv.com/account/api-token" target="_blank" rel="noopener noreferrer">Deriv API Token Settings</a>.
+        </p>
+        <p id="apiTokenError" class="risk-warning hidden" style="margin-top:8px;"></p>
+        <div class="button-row" style="margin-top:10px;">
+          <button id="apiTokenCancelBtn" type="button" class="btn">Cancel</button>
+          <button id="apiTokenSubmitBtn" type="button" class="btn btn-blue">Login</button>
+        </div>
+      </div>
+    </div>
     <div id="tradeNotifyStack" class="trade-notify-stack" aria-live="polite"></div>
     <div id="toast" class="toast hidden"></div>
     {% block extra_scripts %}{% endblock %}

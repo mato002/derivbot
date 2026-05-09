@@ -3677,12 +3677,16 @@ body.is-preloading {
   font-weight: 800;
 }
 
-.trading-brand strong {
+.trading-brand__name {
   display: block;
+  font-size: 0.96rem;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
   color: #f9fafb;
 }
 
-.trading-brand span {
+.trading-brand__tagline {
+  display: block;
   font-size: 0.75rem;
   color: #93a3b8;
 }
@@ -3693,6 +3697,27 @@ body.is-preloading {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+#accessMenuBtn {
+  display: inline-flex;
+}
+
+#accessMenuDropdown {
+  right: 88px;
+  top: 52px;
+  width: 220px;
+  padding: 10px;
+  z-index: 260;
+}
+
+#accessMenuDropdown .btn {
+  width: 100%;
+  margin-top: 6px;
+}
+
+#accessMenuDropdown .btn:first-child {
+  margin-top: 0;
 }
 
 .connection-dot {
@@ -3821,6 +3846,39 @@ body.trading-theme-light .trading-top-header,
 body.trading-theme-light .trading-module-nav {
   background: #ffffff;
   border-color: #d9e1ef;
+  color: #0f172a;
+}
+
+body.trading-theme-light .trading-brand__name {
+  color: #0f172a;
+}
+
+body.trading-theme-light .trading-brand__tagline {
+  color: #475569;
+}
+
+body.trading-theme-light .connection-text {
+  color: #334155;
+}
+
+body.trading-theme-light .module-link {
+  color: #1e293b;
+}
+
+body.trading-theme-light .module-link--active {
+  color: #ffffff;
+}
+
+body.trading-theme-light .wallet-chip {
+  color: #0f172a;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+body.trading-theme-light .header-wallet-menu {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
 }
 
 body.trading-theme-light .module-link {
@@ -3877,4 +3935,333 @@ body.trading-theme-light .platform-main {
   .metric-grid-8 {
     grid-template-columns: 1fr;
   }
+
+}
+
+#headerWalletLoginBtn,
+#headerApiTokenBtn,
+#headerSignupBtn {
+  display: none !important;
+}
+
+/* --- Unified trading terminal design system (dark-first) --- */
+:root {
+  color-scheme: dark;
+  --ui-font: "Inter", "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --space-1: 6px;
+  --space-2: 10px;
+  --space-3: 14px;
+  --space-4: 18px;
+  --shadow-soft: 0 10px 28px rgba(2, 8, 20, 0.34);
+  --shadow-panel: 0 16px 34px rgba(2, 8, 20, 0.4);
+  --shadow-glow: 0 0 0 1px rgba(80, 132, 255, 0.16), 0 10px 28px rgba(35, 86, 245, 0.22);
+  --bg-primary: #070d18;
+  --bg-secondary: #0c1424;
+  --bg-elevated: #101b2f;
+  --bg-panel: #111f35;
+  --bg-panel-soft: #172841;
+  --bg-hover: #1a2f4c;
+  --bg-active: #214b9d;
+  --text-primary: #e8efff;
+  --text-secondary: #b7c6de;
+  --text-muted: #8ea2c0;
+  --border-color: rgba(158, 182, 220, 0.2);
+  --border-soft: rgba(158, 182, 220, 0.14);
+  --accent-blue: #4f8cff;
+  --accent-purple: #8966ff;
+  --success: #2fd086;
+  --danger: #ff5f66;
+  --warning: #f4b844;
+  --info: #5aa9ff;
+}
+
+html.trading-theme-light,
+body.trading-theme-light {
+  color-scheme: light;
+  --bg-primary: #e9f0fb;
+  --bg-secondary: #eff4fc;
+  --bg-elevated: #f6f9ff;
+  --bg-panel: #ffffff;
+  --bg-panel-soft: #f2f6ff;
+  --bg-hover: #e7effe;
+  --bg-active: #2e66d6;
+  --text-primary: #13263f;
+  --text-secondary: #304866;
+  --text-muted: #5e7698;
+  --border-color: rgba(44, 87, 142, 0.22);
+  --border-soft: rgba(44, 87, 142, 0.14);
+  --shadow-soft: 0 8px 24px rgba(36, 72, 116, 0.14);
+  --shadow-panel: 0 14px 30px rgba(37, 74, 123, 0.17);
+  --shadow-glow: 0 0 0 1px rgba(57, 112, 224, 0.16), 0 10px 24px rgba(57, 112, 224, 0.18);
+}
+
+body.trading-shell {
+  font-family: var(--ui-font);
+  background: radial-gradient(circle at 20% -30%, rgba(83, 111, 171, 0.18), transparent 48%), var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+.trading-top-header {
+  min-height: 60px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+  border-bottom: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(12px);
+}
+
+.trading-brand__logo {
+  border-radius: 12px;
+  box-shadow: var(--shadow-glow);
+}
+
+.trading-brand__name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+  color: var(--text-primary);
+}
+
+.trading-brand__tagline,
+.connection-text {
+  color: var(--text-muted);
+}
+
+.trading-module-nav {
+  gap: var(--space-2);
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.module-link {
+  border-radius: 11px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.79rem;
+  letter-spacing: 0.015em;
+  padding: 8px 12px;
+  transition: all 160ms ease;
+}
+
+.module-link:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-blue) 48%, var(--border-color));
+  background: var(--bg-hover);
+}
+
+.module-link--active,
+.module-link--active:hover {
+  color: #f5f8ff;
+  border-color: color-mix(in srgb, var(--accent-blue) 58%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-blue) 72%, #0f1831), color-mix(in srgb, var(--accent-purple) 28%, #0f1831));
+  box-shadow: var(--shadow-glow);
+}
+
+.platform-main {
+  background: transparent;
+}
+
+.card,
+.card-lite,
+.trading-panel,
+.builder-panel,
+.manual-market-card,
+.manual-trade-card,
+.manual-history-card,
+.builder-modal-card {
+  border: 1px solid var(--border-color);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 88%, transparent), color-mix(in srgb, var(--bg-panel-soft) 94%, transparent));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+
+h2,
+h3,
+.section-title {
+  color: var(--text-primary);
+  letter-spacing: 0.012em;
+}
+
+label,
+.trade-type-label,
+th {
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-blue) 52%, var(--border-color));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 32%, transparent);
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 11px;
+  padding: 9px 14px;
+  font-size: 0.82rem;
+  letter-spacing: 0.018em;
+  text-transform: uppercase;
+  transition: transform 120ms ease, filter 140ms ease, box-shadow 160ms ease, background-color 140ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.03);
+}
+
+.btn-start {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--success) 94%, #0f3325), color-mix(in srgb, var(--success) 70%, #114533));
+  color: #effff7;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 28%, transparent), 0 8px 22px color-mix(in srgb, var(--success) 38%, transparent);
+}
+
+.btn-stop {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--danger) 90%, #300f16), color-mix(in srgb, var(--danger) 68%, #461623));
+  color: #fff1f2;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 26%, transparent), 0 8px 20px color-mix(in srgb, var(--danger) 34%, transparent);
+}
+
+.btn-blue {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-blue) 84%, #121f3f), color-mix(in srgb, var(--accent-purple) 36%, #111b36));
+  color: #f3f7ff;
+  box-shadow: var(--shadow-glow);
+}
+
+.builder-icon-btn {
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.builder-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.wallet-chip,
+.header-wallet-menu,
+.account-mode-segment {
+  border-color: var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-soft);
+}
+
+.connection-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 26%, transparent), 0 0 12px color-mix(in srgb, var(--success) 62%, transparent);
+  animation: trading-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes trading-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.28);
+    opacity: 0.75;
+  }
+}
+
+.status-pill {
+  border: 1px solid var(--border-color);
+}
+
+.status-pill--ok {
+  color: color-mix(in srgb, var(--success) 85%, white);
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+}
+
+.status-pill--danger {
+  color: color-mix(in srgb, var(--danger) 82%, white);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.table-wrap {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-panel-soft) 90%, transparent);
+}
+
+table {
+  background: transparent;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border-soft);
+  padding: 9px 10px;
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--bg-hover) 74%, transparent);
+}
+
+.journal-row-time,
+.log-ts,
+.trade-time,
+td:first-child {
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-size: 0.82rem;
+}
+
+.result-win,
+.profit-positive,
+.diag-state--ok {
+  color: var(--success);
+}
+
+.result-loss,
+.profit-negative,
+.diag-state--error {
+  color: var(--danger);
+}
+
+.diag-state--warn {
+  color: var(--warning);
+}
+
+.trade-notify {
+  border: 1px solid var(--border-color);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 90%, transparent), color-mix(in srgb, var(--bg-panel-soft) 94%, transparent));
+  box-shadow: var(--shadow-panel);
+}
+
+.manual-chart,
+.chart-canvas,
+#chartContainer,
+#tvChart {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-blue) 13%, transparent), transparent 54%), color-mix(in srgb, var(--bg-elevated) 92%, black);
+}
+
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease, box-shadow 220ms ease !important;
 }
