@@ -1,129 +1,288 @@
 {% extends "base.html" %}
 {% set active_nav = 'builder' %}
-{% block body_class %}builder-top-tabs{% endblock %}
+{% block body_class %}builder-page{% endblock %}
 {% block title %}Bot Builder — Deriv Platform{% endblock %}
 {% block extra_head %}
+    <link rel="stylesheet" href="/static/builder-page.css" />
     <script src="https://unpkg.com/blockly/blockly.min.js"></script>
 {% endblock %}
 {% block content %}
     <div class="page-inner page-inner--builder">
-      <div class="section-tabs" aria-label="Builder tabs">
-        <button type="button">Summary</button>
-        <button type="button">Transactions</button>
-        <button type="button">Journal</button>
-        <button type="button">Logs</button>
-        <button type="button">Errors</button>
+      <header class="card builder-strategy-header" aria-label="Strategy header">
+        <div class="builder-strategy-header__main">
+          <div class="builder-strategy-header__title-row">
+            <h1 id="builderStrategyName">Digit Over / Under</h1>
+            <span id="builderSaveStatus" class="builder-save-status">Saved</span>
+          </div>
+          <p class="subtle small builder-strategy-header__meta">
+            <span id="builderHeaderSymbol">R_100</span>
+            · <span id="builderHeaderContract">Digit Under</span>
+            · Stake <strong id="builderHeaderStake">$1.00</strong>
+            · <span id="builderHeaderRuntime" class="builder-runtime-badge builder-runtime-badge--stopped">Stopped</span>
+          </p>
+          <p class="subtle small" id="builderHeaderEdited">Last edited —</p>
+        </div>
+        <div class="builder-strategy-header__actions">
+          <div class="builder-file-menu">
+            <button type="button" class="btn btn-sm builder-file-menu__btn" id="builderFileMenuBtn" aria-haspopup="true" aria-expanded="false">Strategy ▾</button>
+            <div class="builder-file-menu__panel hidden" id="builderFileMenuPanel" role="menu">
+              <button type="button" role="menuitem" data-file-action="new">New</button>
+              <button type="button" role="menuitem" data-file-action="save">Save</button>
+              <button type="button" role="menuitem" data-file-action="save-as">Save as…</button>
+              <button type="button" role="menuitem" data-file-action="load">Load…</button>
+              <button type="button" role="menuitem" data-file-action="import">Import…</button>
+              <button type="button" role="menuitem" data-file-action="export-json">Export JSON</button>
+              <button type="button" role="menuitem" data-file-action="export-xml">Export XML</button>
+              <button type="button" role="menuitem" data-file-action="versions">Version history…</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-blue btn-sm" id="builderHeaderSaveBtn">Save</button>
+          <button type="button" class="btn btn-sm" id="builderHeaderBacktestBtn">Backtest</button>
+          <button type="button" class="btn btn-start btn-sm" id="builderHeaderRunBtn">Run bot</button>
+          <button type="button" class="btn btn-sm builder-ai-toggle" id="builderAiToggleBtn" aria-expanded="false">AI Assistant</button>
+        </div>
+      </header>
+
+      <div id="builderDraftRecoveryBanner" class="builder-recovery-banner hidden" role="alert">
+        <span>Unsaved strategy draft found.</span>
+        <button type="button" class="btn btn-blue btn-sm" id="builderDraftRestoreBtn">Restore</button>
+        <button type="button" class="btn btn-sm" id="builderDraftDiscardBtn">Discard</button>
       </div>
+
       <div class="builder-app-shell card">
         <div class="builder-workbench">
-          <aside class="builder-palette" id="builderSidebar" aria-label="Blocks menu">
-            <button type="button" class="btn btn-start builder-quick-strategy" id="builderQuickStrategyBtn">
-              Quick strategy
-            </button>
-            <ul class="quick-strategy-list">
-              <li>Volatility 100</li>
-              <li>Rise/Fall</li>
-              <li>Even/Odd</li>
-              <li>Over/Under</li>
-              <li>Matches/Differs</li>
-              <li>Martingale</li>
-              <li>Custom strategy</li>
-            </ul>
-            <div class="builder-sidebar-head">
-              <h3 class="builder-palette-heading">Blocks menu</h3>
-              <button type="button" class="builder-icon-btn" id="builderSidebarToggle" aria-label="Collapse block menu">⌃</button>
-            </div>
-            <div class="builder-palette-search">
+          <aside class="builder-left-panel" id="builderLeftPanel" aria-label="Strategy library and blocks">
+            <button type="button" class="builder-panel-collapse-btn" id="builderLeftCollapseBtn" aria-label="Collapse left panel">‹</button>
+
+            <section class="builder-library" aria-label="Strategy library">
+              <div class="builder-library__head">
+                <h2 class="builder-panel-title">Strategy library</h2>
+                <button type="button" class="btn btn-blue btn-sm" id="builderQuickStrategyBtn">Browse templates</button>
+              </div>
+              <input
+                type="search"
+                id="builderStrategySearch"
+                class="builder-search-input"
+                placeholder="Search strategies…"
+                autocomplete="off"
+              />
+              <div class="builder-library-sections" id="builderLibrarySections">
+                <div class="builder-library-group" data-library-section="saved">
+                  <button type="button" class="builder-library-group__toggle is-open" aria-expanded="true">
+                    <span>Saved strategies</span><span class="builder-library-group__chev">⌄</span>
+                  </button>
+                  <div class="builder-library-group__body" id="builderLibrarySaved"></div>
+                </div>
+                <div class="builder-library-group" data-library-section="drafts">
+                  <button type="button" class="builder-library-group__toggle is-open" aria-expanded="true">
+                    <span>Local drafts</span><span class="builder-library-group__chev">⌄</span>
+                  </button>
+                  <div class="builder-library-group__body" id="builderLibraryDrafts"></div>
+                </div>
+                <div class="builder-library-group" data-library-section="recent">
+                  <button type="button" class="builder-library-group__toggle is-open" aria-expanded="true">
+                    <span>Recently opened</span><span class="builder-library-group__chev">⌄</span>
+                  </button>
+                  <div class="builder-library-group__body" id="builderLibraryRecent"></div>
+                </div>
+                <div class="builder-library-group" data-library-section="imported">
+                  <button type="button" class="builder-library-group__toggle is-open" aria-expanded="true">
+                    <span>Imported strategies</span><span class="builder-library-group__chev">⌄</span>
+                  </button>
+                  <div class="builder-library-group__body" id="builderLibraryImported"></div>
+                </div>
+                <div class="builder-library-group" data-library-section="templates">
+                  <button type="button" class="builder-library-group__toggle is-open" aria-expanded="true">
+                    <span>Templates</span><span class="builder-library-group__chev">⌄</span>
+                  </button>
+                  <div class="builder-library-group__body" id="builderLibraryTemplates"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="builder-block-palette" aria-label="Block palette">
+              <div class="builder-block-palette__head">
+                <h2 class="builder-panel-title">Block palette</h2>
+                <p class="subtle small builder-palette-hint">Select a category to view blocks.</p>
+              </div>
               <input
                 type="search"
                 id="builderBlockSearch"
                 class="builder-search-input"
-                placeholder="Search blocks"
+                placeholder="Search blocks…"
                 autocomplete="off"
               />
-            </div>
-            <ul class="builder-palette-cats subtle small" id="builderCategoryList">
-              <li data-category="analysis_logics" data-tip-title="Analysis Logics" data-tip-example="trend AND rsi confirms entry"><span class="builder-cat-dot builder-cat-dot--fire"></span><span class="builder-cat-label">Analysis Logics</span></li>
-              <li data-category="trade_parameters" data-tip-title="Trade Parameters" data-tip-example="stake=1.00, contract=DIGITUNDER"><span class="builder-cat-dot"></span><span class="builder-cat-label">Trade parameters</span></li>
-              <li data-category="purchase_conditions" data-tip-title="Purchase Conditions" data-tip-example="if last digit repeats 3 times"><span class="builder-cat-dot"></span><span class="builder-cat-label">Purchase conditions</span></li>
-              <li data-category="sell_conditions" data-tip-title="Sell Conditions" data-tip-example="stop if loss threshold reached"><span class="builder-cat-dot"></span><span class="builder-cat-label">Sell conditions (optional)</span></li>
-              <li data-category="restart_conditions" data-tip-title="Restart Trading Conditions" data-tip-example="restart after stat reset"><span class="builder-cat-dot"></span><span class="builder-cat-label">Restart trading conditions</span></li>
-              <li class="builder-palette-section" data-section-toggle="analysisExtras"><span class="builder-cat-label">Analysis</span><span class="builder-cat-chevron">⌄</span></li>
-              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="analysis" data-tip-title="Analysis" data-tip-example="rsi < 30, trend = bullish"><span class="builder-cat-dot"></span><span class="builder-cat-label">Analysis</span></li>
-              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="utility" data-tip-title="Utility" data-tip-example="group and route logic"><span class="builder-cat-dot"></span><span class="builder-cat-label">Utility</span></li>
-              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="virtual_hook_switcher" data-tip-title="Virtual Hook Switcher" data-tip-example="switch hook path before entry"><span class="builder-cat-dot"></span><span class="builder-cat-label">Virtual Hook Switcher</span></li>
-              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="binarytools" data-tip-title="Binarytools" data-tip-example="binary contract helper"><span class="builder-cat-dot"></span><span class="builder-cat-label">Binarytools</span></li>
-              <li class="builder-palette-subitem" data-parent-section="analysisExtras" data-category="contract_modifiers" data-tip-title="Contract Modifiers" data-tip-example="update stake and limits"><span class="builder-cat-dot"></span><span class="builder-cat-label">Contract modifiers</span></li>
-            </ul>
-            <div class="builder-category-tooltip hidden" id="builderCategoryTooltip"></div>
+              <ul class="builder-palette-cats" id="builderCategoryList">
+                <li class="builder-palette-cat" data-category="analysis_logics" data-tip-title="Analysis logic" data-tip-example="trend AND rsi confirms entry">
+                  <span class="builder-cat-icon" aria-hidden="true">◆</span>
+                  <span class="builder-cat-label">Analysis logic</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+                <li class="builder-palette-cat" data-category="trade_parameters" data-tip-title="Trade parameters" data-tip-example="stake=1.00, contract=DIGITUNDER">
+                  <span class="builder-cat-icon" aria-hidden="true">⚙</span>
+                  <span class="builder-cat-label">Trade parameters</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+                <li class="builder-palette-cat" data-category="purchase_conditions" data-tip-title="Purchase conditions" data-tip-example="if last digit repeats 3 times">
+                  <span class="builder-cat-icon" aria-hidden="true">▶</span>
+                  <span class="builder-cat-label">Purchase conditions</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+                <li class="builder-palette-cat" data-category="sell_conditions" data-tip-title="Sell conditions" data-tip-example="stop if loss threshold reached">
+                  <span class="builder-cat-icon" aria-hidden="true">■</span>
+                  <span class="builder-cat-label">Sell conditions</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+                <li class="builder-palette-cat" data-category="restart_conditions" data-tip-title="Restart conditions" data-tip-example="restart after stat reset">
+                  <span class="builder-cat-icon" aria-hidden="true">↻</span>
+                  <span class="builder-cat-label">Restart conditions</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+                <li class="builder-palette-cat" data-category="utility" data-tip-title="Utility" data-tip-example="group and route logic">
+                  <span class="builder-cat-icon" aria-hidden="true">◇</span>
+                  <span class="builder-cat-label">Utility</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+                <li class="builder-palette-cat" data-category="contract_modifiers" data-tip-title="Contract modifiers" data-tip-example="update stake and limits">
+                  <span class="builder-cat-icon" aria-hidden="true">✎</span>
+                  <span class="builder-cat-label">Contract modifiers</span>
+                  <span class="builder-cat-chevron">›</span>
+                </li>
+              </ul>
+              <div id="builderFlyoutHost" class="builder-flyout-host" aria-label="Blocks for selected category"></div>
+              <div class="builder-category-tooltip hidden" id="builderCategoryTooltip"></div>
+            </section>
           </aside>
 
           <div class="builder-center" id="builderCenterPane">
+            <div class="builder-canvas-header">
+              <div>
+                <h2 class="builder-canvas-title">Strategy canvas</h2>
+                <p class="subtle small builder-canvas-helper">Drag blocks from the palette to build your trading logic.</p>
+              </div>
+              <div class="builder-canvas-header__tools">
+                <button type="button" class="builder-icon-btn" id="builderCollapseSidebarBtn" title="Toggle left panel">☰</button>
+                <button type="button" class="builder-icon-btn" id="builderCollapseRightBtn" title="Toggle control panel">▣</button>
+              </div>
+            </div>
             <div class="builder-toolbar" role="toolbar" aria-label="Workspace tools">
-              <button type="button" class="builder-icon-btn" id="builderCollapseSidebarBtn" title="Collapse sidebar">☰</button>
-              <button type="button" class="builder-icon-btn" id="builderSearchReplaceBtn" title="Open strategy">📂</button>
+              <button type="button" class="builder-icon-btn" id="builderSearchReplaceBtn" title="Search and replace">⌕</button>
               <button type="button" class="builder-icon-btn" id="builderGlobalsBtn" title="Global variables">⌘</button>
-              <button type="button" class="builder-icon-btn" title="New strategy">✚</button>
               <button type="button" class="builder-icon-btn" title="Undo">↶</button>
               <button type="button" class="builder-icon-btn" title="Redo">↷</button>
               <span class="builder-toolbar-sep" aria-hidden="true"></span>
               <button type="button" class="builder-icon-btn" id="builderSnapToggleBtn" title="Snap to grid">⌗</button>
               <button type="button" class="builder-icon-btn" id="builderCleanBtn" title="Clean up blocks">⇅</button>
-              <button type="button" class="builder-icon-btn" id="builderResetBtn" title="Reset workspace to default layout">↺</button>
-              <button type="button" class="builder-icon-btn" id="builderCanvasDarkModeBtn" title="Canvas dark mode">◐</button>
+              <button type="button" class="builder-icon-btn" id="builderResetBtn" title="Reset workspace">↺</button>
+              <button type="button" class="builder-icon-btn" id="builderCanvasDarkModeBtn" title="Canvas theme">◐</button>
               <span class="builder-toolbar-sep" aria-hidden="true"></span>
               <button type="button" class="builder-icon-btn" id="builderZoomOutBtn" title="Zoom out">−</button>
               <button type="button" class="builder-icon-btn" id="builderZoomInBtn" title="Zoom in">＋</button>
-              <button type="button" class="builder-icon-btn" id="builderFitBtn" title="Fit to view">⛶</button>
+              <button type="button" class="builder-icon-btn" id="builderFitBtn" title="Fit to screen">⛶</button>
               <span class="builder-toolbar-sep" aria-hidden="true"></span>
               <button type="button" class="builder-icon-btn" id="loadStrategyBtn" title="Import strategy">⤒</button>
               <button type="button" class="builder-icon-btn builder-tool-btn--primary" id="generateStrategyBtn" title="Export strategy">⤓</button>
             </div>
-            <div id="blocklyDiv" class="builder-blockly-host"></div>
-            <button type="button" class="builder-floating-trash" id="builderFloatingTrash" aria-label="Trash zone">🗑</button>
-            <button type="button" class="builder-floating-ai" id="builderFloatingAi" aria-label="AI helper">AI</button>
-            <canvas id="builderMiniMap" class="builder-minimap" width="190" height="130" aria-label="Workspace minimap"></canvas>
+            <div class="builder-canvas-wrap">
+              <div id="blocklyDiv" class="builder-blockly-host"></div>
+              <div id="builderEmptyState" class="builder-empty-state hidden" aria-live="polite">
+                <strong>No blocks yet</strong>
+                <p class="subtle small">Pick a template or drag blocks from the palette to start building.</p>
+              </div>
+              <button type="button" class="builder-floating-trash" id="builderFloatingTrash" aria-label="Clear workspace">🗑</button>
+              <canvas id="builderMiniMap" class="builder-minimap" width="190" height="130" aria-label="Workspace minimap"></canvas>
+            </div>
           </div>
 
-          <aside class="builder-run-panel" aria-label="Run and summary">
-            <button type="button" id="builderRunBtn" class="btn btn-run-teal btn-builder-run">Run bot</button>
-            <button type="button" id="builderStopBtn" class="btn btn-stop btn-builder-stop">Stop bot</button>
-            <p class="builder-bot-status subtle" id="builderBotStatus">Bot is not running</p>
-            <div class="builder-progress" aria-hidden="true">
-              <div class="builder-progress-fill" id="builderProgressFill"></div>
+          <aside class="builder-control-panel" id="builderControlPanel" aria-label="Bot control center">
+            <button type="button" class="builder-panel-collapse-btn builder-panel-collapse-btn--right" id="builderRightCollapseBtn" aria-label="Collapse control panel">›</button>
+
+            <div class="builder-control-center">
+              <div class="builder-control-center__status-row">
+                <span id="builderBotStatusBadge" class="builder-status-badge builder-status-badge--stopped">Stopped</span>
+                <span id="builderConnectionPill" class="builder-connection-pill">API offline</span>
+              </div>
+              <dl class="builder-control-metrics">
+                <div><dt>Active market</dt><dd id="builderCurrentMarket">R_100</dd></div>
+                <div><dt>Current contract</dt><dd id="builderLastContract">—</dd></div>
+                <div><dt>Total stake</dt><dd id="builderStatStake">—</dd></div>
+                <div><dt>Session P/L</dt><dd id="builderStatProfit">—</dd></div>
+                <div><dt>Trades</dt><dd id="builderStatTrades">—</dd></div>
+                <div><dt>Last signal</dt><dd id="builderLastSignal">—</dd></div>
+                <div><dt>Last error</dt><dd id="builderLastError" class="builder-last-error">—</dd></div>
+                <div><dt>Runtime</dt><dd id="builderSessionDuration">00:00:00</dd></div>
+                <div><dt>Balance</dt><dd id="builderStatBalance">—</dd></div>
+              </dl>
+              <div class="builder-control-actions">
+                <button type="button" id="builderRunBtn" class="btn btn-start btn-sm builder-ctrl-run">Run bot</button>
+                <button type="button" id="builderPauseBtn" class="btn btn-sm builder-ctrl-pause" disabled title="Pause when supported">Pause</button>
+                <button type="button" id="builderStopBtn" class="btn btn-stop btn-sm builder-ctrl-stop">Stop</button>
+                <button type="button" id="builderResetBotBtn" class="btn btn-sm">Reset</button>
+                <button type="button" id="builderViewLogsBtn" class="btn btn-sm btn-blue">View logs</button>
+              </div>
+              <div class="builder-progress" aria-hidden="true">
+                <div class="builder-progress-fill" id="builderProgressFill"></div>
+              </div>
             </div>
-            <div class="builder-run-tabs" role="tablist">
-              <button type="button" class="builder-run-tab builder-run-tab--active" data-tab="summary" role="tab" aria-selected="true">
-                Summary
-              </button>
+
+            <nav class="builder-run-tabs" role="tablist" aria-label="Bot panels">
+              <button type="button" class="builder-run-tab builder-run-tab--active" data-tab="summary" role="tab" aria-selected="true">Summary</button>
               <button type="button" class="builder-run-tab" data-tab="json" role="tab" aria-selected="false">Transactions</button>
               <button type="button" class="builder-run-tab" data-tab="journal" role="tab" aria-selected="false">Journal</button>
-            </div>
+              <button type="button" class="builder-run-tab" data-tab="logs" role="tab" aria-selected="false">Logs <span id="builderLogsBadge" class="builder-tab-badge hidden">0</span></button>
+              <button type="button" class="builder-run-tab" data-tab="errors" role="tab" aria-selected="false">Errors <span id="builderErrorsBadge" class="builder-tab-badge builder-tab-badge--danger hidden">0</span></button>
+            </nav>
             <div id="builderTabSummary" class="builder-tab-panel" role="tabpanel">
-              <dl class="builder-stats">
-                <div><dt>Total stake</dt><dd id="builderStatStake">—</dd></div>
-                <div><dt>Trades</dt><dd id="builderStatTrades">—</dd></div>
-                <div><dt>Profit</dt><dd id="builderStatProfit">— <canvas id="builderProfitSparkline" width="86" height="22"></canvas></dd></div>
-                <div><dt>Balance</dt><dd id="builderStatBalance">—</dd></div>
-                <div><dt>Current market</dt><dd id="builderCurrentMarket">R_100</dd></div>
-                <div><dt>Last digit</dt><dd id="builderLastDigit">-</dd></div>
-                <div><dt>Last contract</dt><dd id="builderLastContract">-</dd></div>
-                <div><dt>Session duration</dt><dd id="builderSessionDuration">00:00:00</dd></div>
-              </dl>
+              <p class="subtle small builder-tab-empty-hint" id="builderSummaryHint">Session metrics update while the bot runs.</p>
             </div>
             <div id="builderTabJson" class="builder-tab-panel hidden" role="tabpanel">
               <pre id="strategyOutput" class="strategy-output strategy-output--panel">{}</pre>
+              <p class="subtle small builder-tab-empty hidden" id="builderTransactionsEmpty">No transactions yet.</p>
             </div>
             <div id="builderTabJournal" class="builder-tab-panel hidden" role="tabpanel">
-              <ul id="builderJournalList" class="builder-journal subtle small"></ul>
+              <ul id="builderJournalList" class="builder-journal subtle small">
+                <li class="builder-tab-empty">Journal is empty. Run the bot to populate events.</li>
+              </ul>
+            </div>
+            <div id="builderTabLogs" class="builder-tab-panel hidden" role="tabpanel">
+              <ul id="builderLogsList" class="builder-journal subtle small">
+                <li class="builder-tab-empty">No log entries yet.</li>
+              </ul>
+            </div>
+            <div id="builderTabErrors" class="builder-tab-panel hidden" role="tabpanel">
+              <ul id="builderErrorsList" class="builder-journal subtle small">
+                <li class="builder-tab-empty">No errors recorded.</li>
+              </ul>
             </div>
           </aside>
         </div>
       </div>
+
+      <aside id="builderAiDrawer" class="builder-ai-drawer" aria-label="AI Strategy Assistant" aria-hidden="true">
+        <div class="builder-ai-drawer__head">
+          <div>
+            <h2>AI Strategy Assistant</h2>
+            <p class="subtle small">Advisory only — does not place trades.</p>
+          </div>
+          <button type="button" class="builder-ai-drawer__close" id="builderAiCloseBtn" aria-label="Close AI assistant">×</button>
+        </div>
+        <div class="builder-ai-actions">
+          <button type="button" class="btn btn-sm" data-ai-action="explain">Explain this strategy</button>
+          <button type="button" class="btn btn-sm" data-ai-action="risk">Detect risky logic</button>
+          <button type="button" class="btn btn-sm" data-ai-action="stake">Suggest safer stake</button>
+          <button type="button" class="btn btn-sm" data-ai-action="idea">Convert idea to blocks</button>
+          <button type="button" class="btn btn-sm" data-ai-action="stoploss">Find missing stop-loss</button>
+          <button type="button" class="btn btn-sm" data-ai-action="optimize">Optimize entry condition</button>
+        </div>
+        <div id="builderAiOutput" class="builder-ai-output subtle small" aria-live="polite">
+          <p>Select an action above for guidance on your current workspace.</p>
+        </div>
+      </aside>
     </div>
+
     <div id="builderSearchReplaceModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Search and replace block parameters">
       <div class="builder-modal-card">
-        <h3>Search & Replace Parameters</h3>
+        <h3>Search &amp; Replace Parameters</h3>
         <label>Search<input id="builderSearchInput" type="text" placeholder="Find value" /></label>
         <label>Replace<input id="builderReplaceInput" type="text" placeholder="Replace with" /></label>
         <div class="button-row">
@@ -146,14 +305,77 @@
     <div id="builderTourOverlay" class="builder-tour hidden">
       <div id="builderTourCallout" class="builder-tour-callout"></div>
     </div>
+    <input type="file" id="builderImportFileInput" class="hidden" accept=".json,.xml,application/json,text/xml" />
+
+    <div id="builderSaveModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Save strategy">
+      <div class="builder-modal-card">
+        <h3 id="builderSaveModalTitle">Save strategy</h3>
+        <label>Strategy name<input id="builderSaveName" type="text" maxlength="120" /></label>
+        <div class="form-grid two-col">
+          <label>Market<input id="builderSaveMarket" type="text" value="R_100" /></label>
+          <label>Contract<select id="builderSaveContract"><option value="DIGITUNDER">Digit Under</option><option value="DIGITOVER">Digit Over</option></select></label>
+        </div>
+        <label class="builder-save-apply-row"><input id="builderSaveApplyBot" type="checkbox" checked /> Apply to active bot configuration (does not auto-run)</label>
+        <div class="button-row">
+          <button type="button" class="btn btn-blue" id="builderSaveConfirmBtn">Save</button>
+          <button type="button" class="btn" id="builderSaveCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="builderLoadModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Load strategy">
+      <div class="builder-modal-card builder-modal-card--wide">
+        <h3>Load strategy</h3>
+        <input type="search" id="builderLoadSearch" class="builder-search-input" placeholder="Search saved strategies…" />
+        <div id="builderLoadList" class="builder-load-list"></div>
+        <div class="button-row">
+          <button type="button" class="btn" id="builderLoadCancelBtn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="builderVersionsModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Version history">
+      <div class="builder-modal-card builder-modal-card--wide">
+        <h3>Version history</h3>
+        <p class="subtle small" id="builderVersionsSubtitle">Select a version to restore.</p>
+        <div id="builderVersionsList" class="builder-versions-list"></div>
+        <div class="button-row">
+          <button type="button" class="btn" id="builderVersionsCloseBtn">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="builderTemplatePreviewModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Template preview">
+      <div class="builder-modal-card">
+        <h3 id="builderTemplatePreviewTitle">Template preview</h3>
+        <dl class="builder-preview-meta" id="builderTemplatePreviewMeta"></dl>
+        <p class="subtle small">Loading this template will replace the current workspace after confirmation.</p>
+        <div class="button-row">
+          <button type="button" class="btn btn-blue" id="builderTemplateUseBtn">Use template</button>
+          <button type="button" class="btn" id="builderTemplatePreviewCloseBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="builderConfirmModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Confirm action">
+      <div class="builder-modal-card">
+        <h3 id="builderConfirmTitle">Confirm</h3>
+        <p id="builderConfirmMessage" class="subtle"></p>
+        <div class="button-row">
+          <button type="button" class="btn btn-blue" id="builderConfirmOkBtn">Continue</button>
+          <button type="button" class="btn" id="builderConfirmCancelBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="builderQuickModal" class="builder-modal hidden" role="dialog" aria-modal="true" aria-label="Quick strategy wizard">
       <div class="builder-modal-card builder-modal-card--xl">
         <div class="builder-quick-shell">
           <aside class="builder-quick-sidebar">
             <div class="builder-quick-title-row">
-              <h3>Quick Strategy</h3>
+              <h3>Strategy templates</h3>
             </div>
-            <p class="subtle">Choose a template below and set your trade parameters.</p>
+            <p class="subtle">Choose a template and set your trade parameters.</p>
             <div class="builder-quick-rail">
               <div id="builderWizardStep1" class="builder-quick-rail-step builder-quick-rail-step--active">Strategy template</div>
               <div id="builderWizardStep2" class="builder-quick-rail-step">Trade parameters</div>
@@ -163,12 +385,12 @@
             <button type="button" class="builder-quick-close" id="builderQuickCloseBtn" aria-label="Close">×</button>
             <div id="builderQuickStep1">
               <div class="builder-quick-searchbar">
-                <input id="builderQuickSearch" type="search" class="builder-search-input" placeholder="Search" />
+                <input id="builderQuickSearch" type="search" class="builder-search-input" placeholder="Search templates" />
               </div>
               <div class="builder-quick-filters">
                 <button type="button" class="builder-quick-filter builder-quick-filter--active" data-filter="all">All</button>
-                <button type="button" class="builder-quick-filter" data-filter="accumulators">Accumulators</button>
-                <button type="button" class="builder-quick-filter" data-filter="options">Options</button>
+                <button type="button" class="builder-quick-filter" data-filter="accumulators">Volatility</button>
+                <button type="button" class="builder-quick-filter" data-filter="options">Digit</button>
               </div>
               <div class="builder-quick-group-title">Templates</div>
               <div id="builderQuickTemplateList" class="builder-quick-template-list"></div>
@@ -191,38 +413,6 @@
                       <option value="R_75">Volatility 75 Index</option>
                       <option value="R_100" selected>Volatility 100 Index</option>
                     </optgroup>
-                    <optgroup label="Volatility 1s Indices">
-                      <option value="1HZ10V">Volatility 10 (1s) Index</option>
-                      <option value="1HZ25V">Volatility 25 (1s) Index</option>
-                      <option value="1HZ50V">Volatility 50 (1s) Index</option>
-                      <option value="1HZ75V">Volatility 75 (1s) Index</option>
-                      <option value="1HZ100V">Volatility 100 (1s) Index</option>
-                    </optgroup>
-                    <optgroup label="Jump Indices">
-                      <option value="JD10">Jump 10 Index</option>
-                      <option value="JD25">Jump 25 Index</option>
-                      <option value="JD50">Jump 50 Index</option>
-                      <option value="JD75">Jump 75 Index</option>
-                      <option value="JD100">Jump 100 Index</option>
-                    </optgroup>
-                    <optgroup label="Crash / Boom">
-                      <option value="BOOM300N">Boom 300 Index</option>
-                      <option value="BOOM500">Boom 500 Index</option>
-                      <option value="BOOM600N">Boom 600 Index</option>
-                      <option value="BOOM900N">Boom 900 Index</option>
-                      <option value="BOOM1000">Boom 1000 Index</option>
-                      <option value="CRASH300N">Crash 300 Index</option>
-                      <option value="CRASH500">Crash 500 Index</option>
-                      <option value="CRASH600N">Crash 600 Index</option>
-                      <option value="CRASH900N">Crash 900 Index</option>
-                      <option value="CRASH1000">Crash 1000 Index</option>
-                    </optgroup>
-                    <optgroup label="Step / Drift Switch">
-                      <option value="STPRNG">Step Index</option>
-                      <option value="DSI10">Drift Switch 10</option>
-                      <option value="DSI20">Drift Switch 20</option>
-                      <option value="DSI30">Drift Switch 30</option>
-                    </optgroup>
                   </select>
                 </label>
                 <label>Contract<select id="builderQuickContract"><option value="DIGITUNDER">Digits Under</option><option value="DIGITOVER">Digits Over</option></select></label>
@@ -241,4 +431,5 @@
 {% endblock %}
 {% block extra_scripts %}
     <script src="/static/blockly_config.js"></script>
+    <script src="/static/builder_storage.js"></script>
 {% endblock %}

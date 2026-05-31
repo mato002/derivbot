@@ -1,95 +1,184 @@
 {% extends "base.html" %}
 {% set active_nav = 'strategies' %}
-{% block title %}Strategies — Deriv Platform{% endblock %}
+{% block body_class %}strategies-policy-page{% endblock %}
+{% block title %}Runtime Policy — Deriv Platform{% endblock %}
 {% block content %}
-    <div class="page-inner page-inner--dash">
-      <header class="topbar card card--hero">
-        <div class="topbar__head">
-          <div class="topbar__titles">
-            <h1>Strategies</h1>
-            <p class="subtle">Confluence filters for digit Over/Under (server-side).</p>
-          </div>
-          <div class="topbar__auth-btns">
-            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
-            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
-          </div>
+    <div class="page-inner page-inner--strategies-policy">
+      <header class="strat-policy-header card">
+        <div class="strat-policy-header__main">
+          <h1>Runtime Policy Center</h1>
+          <p class="subtle small">Production settings for the active bot — execution, search, risk, and server confluence.</p>
         </div>
-        <div class="topbar__sub">
-          <div class="auth-panel auth-panel--dash-line">
-            <span id="authAccount" class="subtle">Not logged in</span>
-            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
-          </div>
-          <p class="subtle small topbar__sub-note">
-            <a href="/">Dashboard</a> — bot control &amp; history
-          </p>
+        <div class="strat-policy-header__links">
+          <a href="/builder" class="btn btn-sm">Bot Builder</a>
+          <a href="/trading-bots" class="btn btn-sm">Trading Bots</a>
+          <a href="/analysis" class="btn btn-sm">Analysis (advisory)</a>
+          <a href="/" class="btn btn-blue btn-sm">Dashboard</a>
+        </div>
+        <div class="strat-policy-header__auth" aria-hidden="true">
+          <span id="authAccount" class="subtle">Not logged in</span>
+          <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login</a>
+          <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
         </div>
       </header>
 
-      <main class="grid grid--dash">
+      <section class="card strat-runtime-card" aria-label="Active runtime">
+        <div class="strat-runtime-card__head">
+          <h2>Active runtime</h2>
+          <span id="stratRuntimeBotState" class="strat-policy-pill strat-policy-pill--offline">Stopped</span>
+        </div>
+        <div class="strat-runtime-grid">
+          <div>
+            <span class="subtle small">Strategy rules</span>
+            <strong id="stratRuntimeRules">—</strong>
+            <p class="subtle small">Edit logic in <a href="/builder">Bot Builder</a> · deploy via <a href="/trading-bots">Trading Bots</a></p>
+          </div>
+          <div>
+            <span class="subtle small">Deployment</span>
+            <strong id="stratRuntimeDeployment">None</strong>
+          </div>
+          <div>
+            <span class="subtle small">Search compatibility</span>
+            <strong id="stratRuntimeCompat">—</strong>
+          </div>
+          <div>
+            <span class="subtle small">Profile</span>
+            <strong id="stratRuntimeProfile">Custom</strong>
+          </div>
+        </div>
+      </section>
+
+      <main class="strat-policy-grid">
         <section class="card full-width">
-          <h2>Strategy Builder Configuration</h2>
-          <p class="subtle small">
-            Over/Under and Rise/Fall keep separate rules. Choose one active strategy to run; the other stays saved
-            but inactive.
-          </p>
+          <h2>Risk profile presets</h2>
+          <p class="subtle small">Applies payout search + execution in one step. Strategy digit rules unchanged.</p>
           <div class="form-grid">
             <label>
-              Active strategy
-              <select id="stratActionSelect">
-                <option value="over_under">Over / Under</option>
-                <option value="rise_fall">Rise / Fall</option>
+              Profile
+              <select id="stratProfilePreset">
+                <option value="">Custom</option>
               </select>
-            </label>
-            <label>
-              If digit &gt;= threshold
-              <input id="stratThresholdInput" type="number" step="1" min="0" max="9" />
-            </label>
-            <label>
-              Trade when condition is true
-              <select id="stratTrueSelect"></select>
-            </label>
-            <label>
-              Trade when condition is false
-              <select id="stratFalseSelect"></select>
-            </label>
-            <label>
-              Market
-              <select id="strategyMarket">
-                <option value="R_100">Volatility 100</option>
-                <option value="R_75">Volatility 75</option>
-                <option value="R_50">Volatility 50</option>
-              </select>
-            </label>
-            <label>
-              Trade type
-              <select id="strategyTradeType">
-                <option>Over/Under</option>
-                <option>Rise/Fall</option>
-                <option>Matches/Differs</option>
-              </select>
-            </label>
-            <label>
-              Martingale multiplier
-              <input id="strategyMartingale" type="number" step="0.1" min="1" value="2" />
-            </label>
-            <label>
-              Max consecutive losses
-              <input id="strategyMaxLosses" type="number" step="1" min="1" value="5" />
             </label>
           </div>
-          <button type="button" id="stratSaveBtn" class="btn btn-blue">Save active strategy</button>
-          <p id="confluenceScopeNote" class="subtle small" style="margin-top: 8px"></p>
+          <button type="button" id="stratApplyPresetBtn" class="btn btn-blue">Apply preset</button>
+          <p id="stratPresetHint" class="subtle small" style="margin-top: 6px"></p>
+        </section>
+
+        <section class="card full-width">
+          <h2>Payout search</h2>
+          <p class="subtle small">Barrier selection and estimated ratio gates before proposals are sent.</p>
+          <div class="form-grid">
+            <label>
+              Search enabled
+              <select id="stratSearchEnabled">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+            <label>
+              Barrier policy
+              <select id="stratBarrierPolicy">
+                <option value="efficiency">Efficiency (recommended)</option>
+                <option value="signal">Signal digit only</option>
+              </select>
+            </label>
+            <label>
+              Min estimated ratio
+              <input id="stratMinEstimatedRatio" type="number" step="0.01" min="1.01" max="10" />
+            </label>
+            <label>
+              Min OVER barrier
+              <input id="stratMinBarrierOver" type="number" step="1" min="0" max="9" />
+            </label>
+            <label>
+              Max UNDER barrier
+              <input id="stratMaxBarrierUnder" type="number" step="1" min="0" max="9" />
+            </label>
+            <label>
+              Adaptive ratio by confidence
+              <select id="stratAdaptiveRatio">
+                <option value="false">Off</option>
+                <option value="true">On</option>
+              </select>
+            </label>
+          </div>
+          <button type="button" id="stratSearchSaveBtn" class="btn btn-blue">Save payout search</button>
+        </section>
+
+        <section class="card full-width">
+          <h2>Execution filters</h2>
+          <p class="subtle small">Final payout ÷ stake check on the live proposal (align with search minimum).</p>
+          <div class="form-grid">
+            <label>
+              Min payout / stake
+              <input id="stratMinPayoutRatio" type="number" step="0.01" min="1.01" max="10" />
+            </label>
+            <label>
+              Max proposal latency (ms)
+              <input id="stratMaxProposalLatency" type="number" step="50" min="50" max="5000" />
+            </label>
+          </div>
+          <button type="button" id="stratExecutionSaveBtn" class="btn btn-blue">Save execution filters</button>
+        </section>
+
+        <section class="card full-width">
+          <h2>Session risk &amp; cooldown</h2>
+          <p class="subtle small">Hard stops enforced by the trade pipeline before execution.</p>
+          <div class="form-grid">
+            <label>
+              Max consecutive losses
+              <input id="stratMaxConsecLosses" type="number" step="1" min="1" max="20" />
+            </label>
+            <label>
+              Max session drawdown (%)
+              <input id="stratMaxDrawdown" type="number" step="0.5" min="1" max="100" />
+            </label>
+            <label>
+              Max trades per session
+              <input id="stratMaxTradesSession" type="number" step="1" min="1" max="500" />
+            </label>
+            <label>
+              Cooldown ticks
+              <input id="stratCooldownTicks" type="number" step="1" min="0" max="500" />
+            </label>
+            <label>
+              Volatility lockout
+              <select id="stratVolLockout">
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select>
+            </label>
+            <label>
+              Research mode (no live orders)
+              <select id="stratResearchMode">
+                <option value="false">Off</option>
+                <option value="true">On</option>
+              </select>
+            </label>
+            <label>
+              Probability gate
+              <select id="stratProbGate">
+                <option value="false">Off</option>
+                <option value="true">On</option>
+              </select>
+            </label>
+            <label>
+              Min win probability
+              <input id="stratMinWinProb" type="number" step="0.01" min="0.5" max="0.99" />
+            </label>
+          </div>
+          <button type="button" id="stratRiskSaveBtn" class="btn btn-blue">Save risk policy</button>
         </section>
 
         <section class="card full-width card--confluence">
-          <h2>Strategy confluence (Over / Under)</h2>
+          <h2>Server confluence (production)</h2>
           <p class="subtle small">
-            Server-side engine gates digit signals: trend, S/R, RSI, candles, range. Requires score ≥ 5 and ≥ 2
-            independent modules (see <code>modules/over_under_strategy_engine.py</code>).
+            Enforced by <code>trade_pipeline</code> for Over/Under. Analysis Tool shows advisory scores only —
+            this is the live gate.
           </p>
           <div class="conf-live">
             <div>
-              <span class="subtle">Active mode</span>
+              <span class="subtle">Market mode</span>
               <strong id="confMarketMode">—</strong>
             </div>
             <div>
@@ -109,8 +198,29 @@
             </div>
           </div>
           <ul id="confReasons" class="conf-reasons subtle small"></ul>
+          <div class="form-grid" style="margin-top: 10px">
+            <label>
+              Min score
+              <input id="confMinScore" type="number" step="1" min="1" max="20" />
+            </label>
+            <label>
+              Min confirmations
+              <input id="confMinConfirmations" type="number" step="1" min="1" max="10" />
+            </label>
+            <label>
+              History ticks
+              <input id="confHistoryTicks" type="number" step="50" min="200" max="3000" />
+            </label>
+            <label>
+              Enforce (block entries)
+              <select id="confEnforce">
+                <option value="true">Yes</option>
+                <option value="false">Advisory only</option>
+              </select>
+            </label>
+          </div>
           <fieldset class="conf-toggles">
-            <legend class="subtle small">Modules (save to apply)</legend>
+            <legend class="subtle small">Modules</legend>
             <label class="conf-check"><input type="checkbox" id="confEnabled" /> Confluence master</label>
             <label class="conf-check"><input type="checkbox" id="confTrend" /> Trend filter</label>
             <label class="conf-check"><input type="checkbox" id="confSr" /> Support / resistance</label>
@@ -119,6 +229,36 @@
             <label class="conf-check"><input type="checkbox" id="confRange" /> Range detector</label>
           </fieldset>
           <button type="button" id="confSaveBtn" class="btn btn-blue">Save confluence settings</button>
+        </section>
+
+        <section class="card full-width">
+          <h2>Pipeline status</h2>
+          <p class="subtle small">Last trade pipeline decision from the running bot.</p>
+          <div id="stratPipelineStatus" class="strat-pipeline-status subtle">Waiting for bot activity…</div>
+        </section>
+
+        <section class="card full-width">
+          <h2>Signal decision log</h2>
+          <p class="subtle small">Server-side audit trail — search, confluence, risk, and execution gates.</p>
+          <div class="strat-table-wrap">
+            <table class="strat-decision-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Side</th>
+                  <th>Barrier</th>
+                  <th>Search</th>
+                  <th>Conf.</th>
+                  <th>Risk</th>
+                  <th>Exec</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="stratDecisionLogBody">
+                <tr><td colspan="8" class="subtle">No decisions yet</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>

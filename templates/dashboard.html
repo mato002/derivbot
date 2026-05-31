@@ -1,201 +1,389 @@
 {% extends "base.html" %}
 {% set active_nav = 'dashboard' %}
-{% block body_class %}has-bottom-bar{% endblock %}
+{% block body_class %}has-bottom-bar dashboard-terminal{% endblock %}
 {% block title %}Dashboard — Deriv Platform{% endblock %}
 {% block extra_head %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 {% endblock %}
 {% block content %}
-    <div class="page-inner page-inner--dash">
-      <header class="topbar card card--hero">
-        <div class="topbar__head">
-          <div class="topbar__titles">
-            <h1>Trading Dashboard</h1>
-            <p class="subtle">Professional Deriv automation command center</p>
+    <div class="page-inner page-inner--dash page-inner--dash-terminal is-loading">
+      <div class="dash-auth-hooks" aria-hidden="true">
+        <div id="profileMenuWrap" class="profile-menu hidden">
+          <button id="profileMenuBtn" type="button" class="btn btn-blue profile-menu__trigger">Account</button>
+          <div id="profileMenuDropdown" class="profile-menu__dropdown hidden">
+            <div id="profileMenuCurrent" class="profile-menu__current">Not logged in</div>
+            <div id="profileMenuAccounts" class="profile-menu__accounts"></div>
+            <button id="logoutDerivMenuBtn" type="button" class="btn btn-stop profile-menu__logout">Logout</button>
           </div>
-          <div class="topbar__auth-btns">
-            <div id="profileMenuWrap" class="profile-menu hidden">
-              <button id="profileMenuBtn" type="button" class="btn btn-blue profile-menu__trigger">
-                Account
-              </button>
-              <div id="profileMenuDropdown" class="profile-menu__dropdown hidden">
-                <div id="profileMenuCurrent" class="profile-menu__current">Not logged in</div>
-                <div id="profileMenuAccounts" class="profile-menu__accounts"></div>
-                <button id="logoutDerivMenuBtn" type="button" class="btn btn-stop profile-menu__logout">Logout</button>
+        </div>
+        <a id="loginDerivBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login with Deriv</a>
+        <span id="balanceMirror">--</span>
+        <span id="todayProfit">$0.00</span>
+        <span id="todayLoss">$0.00</span>
+        <span id="netPl">$0.00</span>
+        <span id="activeTradesMirror">0</span>
+        <span id="winRateCard">--</span>
+        <span id="winRateCardVisible">--</span>
+        <span id="botStatusCard">Stopped</span>
+        <span id="dashLoginStatus">Connected</span>
+      </div>
+
+      <div id="hybridBanner" class="dash-banner hidden"></div>
+
+      <div class="dash-status-bar" id="dashStatusBar" role="status" aria-live="polite" aria-label="Trading status">
+        <div class="dash-status-bar__track">
+          <div class="dash-status-bar__item">
+            <span class="dash-status-bar__label">Connection</span>
+            <span class="dash-status-bar__value dash-status-bar__value--conn">
+              <span id="statusBarConnectionDot" class="dash-status-bar__dot"></span>
+              <strong id="statusBarConnection">—</strong>
+            </span>
+          </div>
+          <div class="dash-status-bar__sep" aria-hidden="true"></div>
+          <div class="dash-status-bar__item">
+            <span class="dash-status-bar__label">Account</span>
+            <strong id="statusBarAccount" class="dash-status-bar__value">—</strong>
+          </div>
+          <div class="dash-status-bar__sep" aria-hidden="true"></div>
+          <div class="dash-status-bar__item">
+            <span class="dash-status-bar__label">Balance</span>
+            <strong id="statusBarBalance" class="dash-status-bar__value dash-status-bar__value--mono">—</strong>
+          </div>
+          <div class="dash-status-bar__sep" aria-hidden="true"></div>
+          <div class="dash-status-bar__item">
+            <span class="dash-status-bar__label">Open Trades</span>
+            <strong id="statusBarOpenTrades" class="dash-status-bar__value">0</strong>
+          </div>
+          <div class="dash-status-bar__sep" aria-hidden="true"></div>
+          <div class="dash-status-bar__item dash-status-bar__item--strategy">
+            <span class="dash-status-bar__label">Strategy</span>
+            <strong id="statusBarStrategy" class="dash-status-bar__value">—</strong>
+          </div>
+          <div class="dash-status-bar__sep" aria-hidden="true"></div>
+          <div class="dash-status-bar__item">
+            <span class="dash-status-bar__label">Bot State</span>
+            <strong id="statusBarBotState" class="dash-status-bar__value dash-status-bar__badge">Stopped</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-workspace">
+        <!-- LEFT: Command terminal -->
+        <aside class="dash-workspace__left">
+          <section class="terminal-card dash-panel dash-panel--controls cmd-terminal">
+            <header class="cmd-terminal__head">
+              <span class="cmd-terminal__prompt" aria-hidden="true">BOT&gt;</span>
+              <h2 class="cmd-terminal__title">Command Terminal</h2>
+            </header>
+
+            <div class="bot-status-card">
+              <div class="bot-status-card__section">
+                <span class="terminal-label">Status</span>
+                <div class="bot-status-pills" id="cmdStatusPills" role="status" aria-live="polite">
+                  <span class="bot-status-pill" data-state="running">Running</span>
+                  <span class="bot-status-pill" data-state="stopped">Stopped</span>
+                  <span class="bot-status-pill" data-state="paused">Paused</span>
+                </div>
+              </div>
+              <div class="bot-status-card__row">
+                <span class="terminal-label">Strategy</span>
+                <strong id="cmdStrategyValue" class="bot-status-card__value">—</strong>
+              </div>
+              <div class="bot-status-card__row">
+                <span class="terminal-label">Risk</span>
+                <strong id="cmdRiskLevel" class="bot-status-card__value bot-status-card__value--risk">—</strong>
+              </div>
+              <div class="bot-status-card__row bot-status-card__row--profit">
+                <span class="terminal-label">Session Profit</span>
+                <strong id="cmdSessionProfit" class="bot-status-card__value bot-status-card__value--mono">$0.00</strong>
               </div>
             </div>
-            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
-          </div>
+
+            <div class="cmd-terminal__params" aria-label="Trade parameters">
+              <div class="cmd-terminal__params-head">Trade parameters</div>
+              <div class="form-grid control-panel-grid dash-form-grid">
+                <label>
+                  <span class="terminal-label">Stake</span>
+                  <input id="stakeInput" type="number" step="0.01" min="0.01" inputmode="decimal" />
+                </label>
+                <label>
+                  <span class="terminal-label">Take Profit</span>
+                  <input id="takeProfitInput" type="number" step="0.01" min="0.01" inputmode="decimal" />
+                </label>
+                <label>
+                  <span class="terminal-label">Stop Loss</span>
+                  <input id="stopLossInput" type="number" step="0.01" inputmode="decimal" />
+                </label>
+              </div>
+              <div class="control-panel-actions dash-control-actions">
+                <button id="saveSettingsBtn" type="button" class="btn btn-blue">Save parameters</button>
+              </div>
+            </div>
+
+            <div class="cmd-terminal__actions" role="toolbar" aria-label="Bot controls">
+              <button type="button" id="startBtn" class="cmd-btn cmd-btn--start" title="Start bot">
+                <span class="cmd-btn__icon" aria-hidden="true">▶</span>
+                <span class="cmd-btn__label">Start</span>
+              </button>
+              <button type="button" id="pauseBtn" class="cmd-btn cmd-btn--pause" title="Pause bot" disabled>
+                <span class="cmd-btn__icon" aria-hidden="true">⏸</span>
+                <span class="cmd-btn__label">Pause</span>
+              </button>
+              <button type="button" id="stopBtn" class="cmd-btn cmd-btn--stop" title="Stop bot" disabled>
+                <span class="cmd-btn__icon" aria-hidden="true">■</span>
+                <span class="cmd-btn__label">Stop</span>
+              </button>
+            </div>
+
+            <div class="dash-auth-hooks" aria-hidden="true">
+              <span id="dashRuntimeBotState">—</span>
+              <span id="dashActiveStrategyName">—</span>
+              <span id="activeStrategyName">Over/Under</span>
+            </div>
+
+            <nav class="dash-quick-links subtle small">
+              <a href="/strategies">Policy</a>
+              <span aria-hidden="true">·</span>
+              <a href="/manual-trader">Manual</a>
+              <span aria-hidden="true">·</span>
+              <a href="/builder">Builder</a>
+            </nav>
+          </section>
+        </aside>
+
+        <!-- CENTER: Live chart (hero) -->
+        <main class="dash-workspace__center">
+          <section class="terminal-card dash-chart-hero">
+            <header class="dash-chart-hero__head">
+              <div class="dash-chart-hero__title-block">
+                <h2 class="terminal-card__title">Live Session</h2>
+                <span class="terminal-chip terminal-chip--live">LIVE</span>
+              </div>
+              <div class="dash-chart-hero__stats">
+                <div class="dash-chart-stat">
+                  <span class="terminal-label">Stake</span>
+                  <strong id="liveStake" class="terminal-value">0.00</strong>
+                </div>
+                <div class="dash-chart-stat">
+                  <span class="terminal-label">Trades</span>
+                  <strong id="tradesCount" class="terminal-value">0</strong>
+                </div>
+                <div class="dash-chart-stat">
+                  <span class="terminal-label">Last</span>
+                  <strong id="lastResult" class="terminal-value">-</strong>
+                </div>
+                <div class="dash-chart-stat dash-chart-stat--active">
+                  <span class="terminal-label">Open</span>
+                  <strong id="activeTrades" class="terminal-value">0</strong>
+                </div>
+              </div>
+            </header>
+            <div class="dash-digit-tape-wrap">
+              <span class="terminal-label">Digit tape</span>
+              <div id="dashDigitTape" class="dash-digit-tape" aria-live="polite"></div>
+              <span id="lastDigits" class="visually-hidden">[]</span>
+            </div>
+            <div class="dash-chart-hero__canvas-wrap">
+              <div class="dash-chart-skeleton" aria-hidden="true">
+                <div class="dash-skeleton-shimmer"></div>
+              </div>
+              <canvas id="profitChart"></canvas>
+            </div>
+            <footer class="dash-chart-hero__foot">
+              <span class="dash-chart-hero__foot-label">Cumulative P/L</span>
+              <span class="dash-chart-hero__foot-hint">Updates every tick · no reload</span>
+            </footer>
+          </section>
+        </main>
+
+        <!-- RIGHT: Account · Open trades · Signals -->
+        <aside class="dash-workspace__right">
+          <section class="terminal-card dash-panel dash-panel--account" aria-label="Account summary">
+            <header class="terminal-card__head">
+              <h2 class="terminal-card__title">Account</h2>
+              <strong class="account-overview__meta-value" id="acctCurrency">USD</strong>
+            </header>
+            <div class="dash-account-compact">
+              <div class="dash-account-row">
+                <span class="terminal-label">Balance</span>
+                <strong id="balance" class="account-overview__value tone-neutral" data-raw-value="">$0.00</strong>
+              </div>
+              <div class="dash-account-row">
+                <span class="terminal-label">Equity</span>
+                <strong id="acctEquity" class="account-overview__value tone-neutral" data-raw-value="">$0.00</strong>
+              </div>
+              <div class="dash-account-row dash-account-row--profit">
+                <span class="terminal-label">Profit</span>
+                <strong id="profit" class="account-overview__value tone-neutral" data-raw-value="">$0.00</strong>
+              </div>
+              <div class="dash-account-row">
+                <span class="terminal-label">Margin</span>
+                <strong id="acctMargin" class="account-overview__value tone-neutral" data-raw-value="">$0.00</strong>
+              </div>
+              <div class="dash-account-row">
+                <span class="terminal-label">Free Margin</span>
+                <strong id="acctFreeMargin" class="account-overview__value tone-neutral" data-raw-value="">$0.00</strong>
+              </div>
+              <div class="dash-account-row dash-account-row--status">
+                <span class="terminal-label">Bot</span>
+                <strong id="statusBadge" class="account-overview__value account-overview__status tone-neutral" data-raw-value="0">Stopped</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="terminal-card dash-panel dash-panel--trades">
+            <header class="terminal-card__head">
+              <h2 class="terminal-card__title">Open Trades</h2>
+              <span class="terminal-chip" id="dashOpenTradesCount">0</span>
+            </header>
+            <ul id="dashOpenTradesList" class="dash-open-trades">
+              <li class="dash-open-trade dash-open-trade--empty">No open positions</li>
+            </ul>
+          </section>
+
+          <section class="terminal-card dash-panel dash-panel--signals">
+            <header class="terminal-card__head">
+              <h2 class="terminal-card__title">Signals</h2>
+              <span class="terminal-chip terminal-chip--live" id="dashSignalEntry">—</span>
+            </header>
+            <div class="dash-signal-hero">
+              <span class="dash-signal-hero__label" id="dashSignalLabel">—</span>
+              <div class="dash-signal-meter">
+                <div class="dash-signal-meter__fill" id="dashSignalMeterFill"></div>
+              </div>
+              <span class="dash-signal-hero__conf"><span id="dashSignalConfidence">0</span>% confidence</span>
+            </div>
+            <p class="dash-signal-detail" id="dashSignalDetail">Waiting for market data…</p>
+            <ul id="dashSignalReasons" class="dash-signal-reasons"></ul>
+          </section>
+
+          <section class="terminal-card dash-panel dash-panel--activity">
+            <header class="terminal-card__head">
+              <h2 class="terminal-card__title">Activity</h2>
+              <span class="activity-stream-live" aria-hidden="true"><span class="activity-stream-live__dot"></span>LIVE</span>
+            </header>
+            <ul id="activityStream" class="activity-stream" aria-live="polite" aria-label="Real-time activity">
+              <li class="activity-stream__empty">Waiting for activity…</li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <!-- Admin / secondary (collapsed by default) -->
+      <details class="dash-admin">
+        <summary class="dash-admin__summary">System &amp; history</summary>
+        <div class="dash-admin__body">
+          <section class="terminal-card dash-diagnostics-wrap">
+            <div class="dash-diagnostics__bar">
+              <details class="dash-diagnostics">
+                <summary class="dash-diagnostics__summary">
+                  <span class="terminal-card__title">Diagnostics</span>
+                </summary>
+                <div class="dash-diagnostics__body">
+                  <div class="diagnostics-grid">
+                    <div class="diag-item"><span>OAuth client</span><strong id="diagOauthClient">--</strong></div>
+                    <div class="diag-item"><span>WS + Trading REST id</span><strong id="diagWsAppId">--</strong></div>
+                    <div class="diag-item"><span>Login state</span><strong id="diagLoginState">--</strong></div>
+                    <div class="diag-item"><span>Market data</span><strong id="diagMarketData">--</strong></div>
+                  </div>
+                  <p id="diagDetail" class="subtle small"></p>
+                </div>
+              </details>
+              <button type="button" id="refreshDiagnosticsBtn" class="btn btn-blue btn-sm">Refresh</button>
+            </div>
+          </section>
+
+          <section class="terminal-card dash-analytics" id="dashAnalytics">
+            <header class="terminal-card__head dash-analytics__head">
+              <div>
+                <h2 class="terminal-card__title">Session Analytics</h2>
+                <span class="terminal-subline" id="analyticsTradeCount">0 settled</span>
+              </div>
+              <div class="dash-analytics__curve-label">Equity curve</div>
+            </header>
+
+            <div class="dash-analytics-equity">
+              <div id="chartEquityCurve" class="dash-analytics-equity__chart"></div>
+              <div id="chartWinLoss" class="dash-analytics-equity__wl"></div>
+            </div>
+
+            <div class="dash-analytics-grid">
+              <article class="dash-analytics-card">
+                <span class="terminal-label">Win Rate</span>
+                <strong id="analyticsWinRate" class="dash-analytics-card__value">—</strong>
+                <div id="chartWinRate" class="dash-analytics-card__chart"></div>
+              </article>
+              <article class="dash-analytics-card">
+                <span class="terminal-label">Profit Factor</span>
+                <strong id="analyticsProfitFactor" class="dash-analytics-card__value">—</strong>
+                <div id="chartProfitFactor" class="dash-analytics-card__chart"></div>
+              </article>
+              <article class="dash-analytics-card">
+                <span class="terminal-label">Average Win</span>
+                <strong id="analyticsAvgWin" class="dash-analytics-card__value">—</strong>
+                <div id="chartAvgWin" class="dash-analytics-card__chart"></div>
+              </article>
+              <article class="dash-analytics-card">
+                <span class="terminal-label">Average Loss</span>
+                <strong id="analyticsAvgLoss" class="dash-analytics-card__value">—</strong>
+                <div id="chartAvgLoss" class="dash-analytics-card__chart"></div>
+              </article>
+              <article class="dash-analytics-card">
+                <span class="terminal-label">Longest Win Streak</span>
+                <strong id="analyticsWinStreak" class="dash-analytics-card__value">—</strong>
+                <div id="chartWinStreak" class="dash-analytics-card__chart"></div>
+              </article>
+              <article class="dash-analytics-card">
+                <span class="terminal-label">Longest Loss Streak</span>
+                <strong id="analyticsLossStreak" class="dash-analytics-card__value">—</strong>
+                <div id="chartLossStreak" class="dash-analytics-card__chart"></div>
+              </article>
+              <article class="dash-analytics-card dash-analytics-card--roi">
+                <span class="terminal-label">ROI</span>
+                <strong id="analyticsRoi" class="dash-analytics-card__value">—</strong>
+                <div id="chartRoi" class="dash-analytics-card__chart"></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="terminal-card dash-card dash-card--history">
+            <header class="terminal-card__head">
+              <h2 class="terminal-card__title">Trade History</h2>
+              <span class="terminal-subline">Last 20 trades</span>
+            </header>
+            <div class="table-wrap dash-table-wrap">
+              <table class="dash-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Source</th>
+                    <th>Digit</th>
+                    <th>Result</th>
+                    <th>Profit</th>
+                  </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+              </table>
+            </div>
+          </section>
         </div>
-        <div class="topbar__sub">
-          <div class="auth-panel auth-panel--dash-line">
-            <span id="authAccount" class="subtle">Not logged in</span>
-            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
-          </div>
-          <div class="top-metrics">
-          <div class="metric">
-            <span>Balance</span>
-            <strong id="balance">$0.00</strong>
-          </div>
-          <div class="metric">
-            <span>Profit</span>
-            <strong id="profit">$0.00</strong>
-          </div>
-          <div class="metric">
-            <span>Status</span>
-            <strong id="statusBadge" class="badge stopped">Stopped</strong>
-          </div>
-        </div>
-        </div>
-      </header>
+      </details>
 
-      <div id="hybridBanner" class="card hybrid-banner hidden"></div>
-      <section class="card diagnostics-card">
-        <div class="diagnostics-head">
-          <h2>Startup diagnostics</h2>
-          <button type="button" id="refreshDiagnosticsBtn" class="btn btn-blue btn-sm">Refresh</button>
-        </div>
-        <div class="diagnostics-grid">
-          <div class="diag-item"><span>OAuth client</span><strong id="diagOauthClient">--</strong></div>
-          <div class="diag-item"><span>WS app id</span><strong id="diagWsAppId">--</strong></div>
-          <div class="diag-item"><span>Login state</span><strong id="diagLoginState">--</strong></div>
-          <div class="diag-item"><span>Market data</span><strong id="diagMarketData">--</strong></div>
-        </div>
-        <p id="diagDetail" class="subtle small"></p>
-      </section>
-
-      <section class="metric-grid-8">
-        <div class="metric-card-dark"><span>Deriv Login Status</span><strong id="dashLoginStatus">Connected</strong></div>
-        <div class="metric-card-dark"><span>Deriv Balance</span><strong id="balanceMirror">--</strong></div>
-        <div class="metric-card-dark"><span>Today Profit</span><strong class="profit-positive" id="todayProfit">$0.00</strong></div>
-        <div class="metric-card-dark"><span>Today Loss</span><strong class="profit-negative" id="todayLoss">$0.00</strong></div>
-        <div class="metric-card-dark"><span>Net P/L</span><strong id="netPl">$0.00</strong></div>
-        <div class="metric-card-dark"><span>Active Trades</span><strong id="activeTradesMirror">0</strong></div>
-        <div class="metric-card-dark"><span>Win Rate</span><strong id="winRateCard">--</strong></div>
-        <div class="metric-card-dark"><span>Bot Status</span><strong id="botStatusCard">Stopped</strong></div>
-      </section>
-
-      <main class="grid grid--dash" style="margin-top:12px;">
-        <section class="card control-panel-card">
-          <h2>Control Panel</h2>
-          <div class="button-row control-panel-run-row">
-            <button id="startBtn" class="btn btn-start">Start Bot</button>
-            <button id="stopBtn" class="btn btn-stop">Stop Bot</button>
-          </div>
-          <p class="subtle small">Uses <code>/start-bot</code> / <code>/stop-bot</code> (legacy <code>/start</code> still works).</p>
-          <div class="form-grid control-panel-grid">
-            <label>
-              Stake
-              <input id="stakeInput" type="number" step="0.01" min="0.01" />
-            </label>
-            <label>
-              Take Profit
-              <input id="takeProfitInput" type="number" step="0.01" min="0.01" />
-            </label>
-            <label>
-              Stop Loss
-              <input id="stopLossInput" type="number" step="0.01" />
-            </label>
-          </div>
-          <div class="form-grid control-panel-grid" style="margin-top: 10px">
-            <label>
-              Active strategy
-              <select id="dashStrategyAction">
-                <option value="over_under">Over / Under</option>
-                <option value="rise_fall">Rise / Fall</option>
-              </select>
-            </label>
-            <label>
-              Threshold
-              <input id="dashStrategyThreshold" type="number" step="1" min="0" max="9" />
-            </label>
-            <label>
-              True side
-              <select id="dashStrategyTrue"></select>
-            </label>
-            <label>
-              False side
-              <select id="dashStrategyFalse"></select>
-            </label>
-          </div>
-          <div class="control-panel-actions">
-            <button id="saveStrategyModeBtn" class="btn btn-blue" style="margin-top: 10px">Save Strategy Mode</button>
-            <button id="saveSettingsBtn" class="btn btn-blue">Save Settings</button>
-          </div>
-          <p class="subtle small" style="margin-top: 12px">
-            <a href="/strategies">Strategies</a> (confluence filters) ·
-            <a href="/manual-trader">Manual trader</a>
-          </p>
-        </section>
-
-        <section class="card">
-          <h2>Live Data</h2>
-          <div class="live-row">
-            <span>Active trades</span>
-            <strong id="activeTrades">0</strong>
-          </div>
-          <div class="live-row">
-            <span>Current Stake</span>
-            <strong id="liveStake">0.00</strong>
-          </div>
-          <div class="live-row">
-            <span>Last Digits</span>
-            <strong id="lastDigits">[]</strong>
-          </div>
-          <div class="live-row">
-            <span>Last Result</span>
-            <strong id="lastResult">-</strong>
-          </div>
-          <div class="live-row">
-            <span>Trades Count</span>
-            <strong id="tradesCount">0</strong>
-          </div>
-          <div class="events">
-            <h3>Events</h3>
-            <ul id="eventsList"></ul>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Profit Curve</h2>
-          <canvas id="profitChart"></canvas>
-        </section>
-
-        <section class="card">
-          <h2>Strategy Performance</h2>
-          <p class="subtle small">Win/Loss ratio, expectancy, and active strategy benchmark placeholders.</p>
-          <div class="live-row"><span>Current strategy</span><strong id="activeStrategyName">Over/Under</strong></div>
-          <div class="live-row"><span>Average return</span><strong id="avgReturnMetric">--</strong></div>
-          <div class="live-row"><span>Best run</span><strong id="bestRunMetric">--</strong></div>
-        </section>
-
-        <section class="card full-width">
-          <h2>Trade History (Last 20)</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Source</th>
-                  <th>Digit</th>
-                  <th>Result</th>
-                  <th>Profit</th>
-                </tr>
-              </thead>
-              <tbody id="historyBody"></tbody>
-            </table>
-          </div>
-        </section>
-      </main>
-
-      <button type="button" class="risk-strip" id="riskDisclaimerBtn">Risk disclaimer</button>
+      <button type="button" class="risk-strip dash-risk-strip" id="riskDisclaimerBtn">Risk disclaimer</button>
     </div>
 {% endblock %}
 
+{% block extra_scripts %}
+    <script src="/static/dashboard-polish.js?v=polish-v1"></script>
+    <script src="/static/account-overview.js?v=dash-layout-v2"></script>
+    <script src="/static/activity-stream.js?v=activity-v1"></script>
+    <script src="/static/trade-analytics.js?v=analytics-v1"></script>
+{% endblock %}
+
 {% block app_footer %}
-    <footer class="app-bottom-bar">
+    <footer class="app-bottom-bar dash-bottom-bar">
       <button type="button" class="app-bottom-info" id="bottomInfoBtn" aria-label="Information">i</button>
-      <button type="button" id="mobileRunBtn" class="btn-run-teal">
+      <button type="button" id="mobileRunBtn" class="btn-run-teal dash-mobile-run">
         <span class="play-tri" aria-hidden="true">▶</span>
         <span id="mobileRunLabel">Run</span>
       </button>

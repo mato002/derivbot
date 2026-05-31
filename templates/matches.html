@@ -1,189 +1,483 @@
 {% extends "base.html" %}
 {% set active_nav = 'matches' %}
-{% block body_class %}has-bottom-bar matches-page{% endblock %}
+{% block body_class %}matches-page matches-has-exec-bar{% endblock %}
 {% block title %}Matches — Deriv Platform{% endblock %}
 {% block content %}
-    <div class="page-inner page-inner--dash">
-      <header class="topbar card card--hero">
-        <div class="topbar__head">
-          <div class="topbar__titles">
-            <h1>Matches</h1>
-            <p class="subtle">Digit Match (DIGITMATCH): win if the last digit of the spot at expiry equals your barrier.</p>
-          </div>
-          <div class="topbar__auth-btns">
-            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
-            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
-          </div>
-        </div>
-        <div class="topbar__sub">
-          <div class="auth-panel auth-panel--dash-line">
-            <span id="authAccount" class="subtle">Not logged in</span>
-            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
-          </div>
-          <p class="subtle small topbar__sub-note">
-            <a href="/manual-trader">Manual Trader</a> — Over / Under · <a href="/">Dashboard</a>
-          </p>
-        </div>
-      </header>
-
-      <div id="hybridBanner" class="card hybrid-banner hidden"></div>
-      <div class="section-tabs">
-        <button type="button">Summary</button>
-        <button type="button">Transactions</button>
-        <button type="button">Journal</button>
-        <button type="button">Logs</button>
-        <button type="button">Errors</button>
+    <div class="page-inner page-inner--matches-terminal">
+      <div class="matches-auth-hooks" aria-hidden="true">
+        <a id="loginDerivBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login with Deriv</a>
+        <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+        <span id="authAccount" class="subtle">Not logged in</span>
+        <span id="derivBalance" class="subtle">Deriv balance: --</span>
       </div>
 
-      <main class="grid grid--dash matches-grid">
-        <section class="card matches-live-card">
-          <h2>Live ticks</h2>
-          <div class="matches-opportunity" id="matchesOpportunityBanner" aria-live="polite">
-            <span class="matches-opportunity__icon">⚡</span>
-            <div>
-              <strong id="matchesOpportunityTitle">Scanning for imbalance...</strong>
-              <p id="matchesOpportunityText" class="subtle small">Waiting for enough ticks to evaluate under/over-representation.</p>
-            </div>
-          </div>
-          <div class="matches-performance" aria-label="Live performance">
-            <div class="matches-performance__item">
-              <span class="subtle small">Session P/L</span>
-              <strong id="matchesSessionPnl">--</strong>
-            </div>
-            <div class="matches-performance__item">
-              <span class="subtle small">Win rate</span>
-              <strong id="matchesWinRate">--</strong>
-            </div>
-            <div class="matches-performance__item">
-              <span class="subtle small">Streak</span>
-              <strong id="matchesStreak">--</strong>
-            </div>
-          </div>
-          <div class="manual-market-head matches-live-head">
-            <div>
-              <div class="subtle small">Last price</div>
-              <div class="matches-value-row">
-                <strong id="matchesLivePrice" class="matches-live-value">--</strong>
-                <span id="matchesPriceArrow" class="matches-tick-arrow" aria-hidden="true" title="Vs previous tick"></span>
-                <span id="matchesPricePct" class="matches-tick-pct subtle small" title="Change vs previous tick"></span>
-              </div>
-            </div>
-            <div>
-              <div class="subtle small">Last digit</div>
-              <div class="matches-value-row">
-                <strong id="matchesLiveDigit" class="matches-live-value matches-live-digit">--</strong>
-                <span id="matchesDigitArrow" class="matches-tick-arrow matches-tick-arrow--digit" aria-hidden="true" title="Vs previous last digit"></span>
-              </div>
-            </div>
-          </div>
-          <p class="subtle small">Digit ticker (newest on the right)</p>
-          <div id="matchesTicker" class="matches-ticker" aria-live="polite">
-            <div id="matchesTickerStrip" class="matches-ticker-strip"></div>
-          </div>
-          <h3 class="matches-subheading subtle small">Recent last digits (last 20 ticks)</h3>
-          <p class="subtle small" style="margin: 0 0 6px">
-            Same order as chart points — helps spot streaks (random walk still applies).
-          </p>
-          <div id="matchesDigitHistory" class="matches-history-strip" aria-label="Last 20 tick last digits"></div>
-          <p class="subtle small matches-tick-preview" id="matchesTickPreview">Tick vs barrier: —</p>
-          <p class="matches-last-contract subtle small" id="matchesLastContract">Last settled trade: —</p>
-          <div class="matches-signal-panel" aria-live="polite">
-            <div class="matches-signal-panel__head">
-              <span class="matches-signal-panel__label">Signal strength</span>
-              <strong id="matchesSignalLabel">NO EDGE</strong>
-            </div>
-            <div class="matches-signal-meter">
-              <div id="matchesSignalMeterFill" class="matches-signal-meter__fill"></div>
-            </div>
-            <p id="matchesSignalDetail" class="subtle small">Collecting enough samples to estimate short-term imbalance.</p>
-          </div>
+      <div id="hybridBanner" class="card hybrid-banner hidden"></div>
 
-          <div class="matches-coach">
-            <h3 class="matches-subheading">Match coach</h3>
-            <p class="subtle small matches-coach-disclaimer">
-              Short-term imbalance and quote-aware guidance from <strong>recent ticks</strong> and live <strong>Deriv proposal</strong>.
-            </p>
-            <ul id="matchesCoachList" class="matches-coach-list" aria-live="polite"></ul>
-            <div class="matches-coach-entries-wrap">
-              <h4 class="matches-subheading subtle small">Possible entry points</h4>
-              <p class="subtle small matches-coach-entries-note">
-                Digits below combine coach signals (hottest / coldest / rising rank / last tick). Circles match the digit pad — blue bar = most hits, red = least in the window.
-              </p>
-              <div id="matchesCoachEntries" class="matches-coach-entries" aria-label="Possible entry digits"></div>
-            </div>
-            <div class="matches-rising-rank subtle small" role="group" aria-label="Rising digit rank for entry">
-              <span class="matches-rising-rank__label">Rising entry uses:</span>
-              <label class="matches-rising-rank__opt">
-                <input type="radio" name="matchesRisingRank" value="1" checked />
-                1st strongest ▲
-              </label>
-              <label class="matches-rising-rank__opt">
-                <input type="radio" name="matchesRisingRank" value="2" />
-                2nd increasing ▲
-              </label>
-            </div>
-            <div class="matches-coach-actions">
-              <button type="button" id="matchesApplyHotBtn" class="btn btn-sm btn-blue">Use hottest digit</button>
-              <button type="button" id="matchesApplyColdBtn" class="btn btn-sm btn-blue">Use coldest digit</button>
-              <button type="button" id="matchesApplyRisingBtn" class="btn btn-sm btn-blue">Use rising digit</button>
-              <button type="button" id="matchesApplyLastDigitBtn" class="btn btn-sm btn-blue">Barrier = last digit</button>
-            </div>
-          </div>
-        </section>
+      <nav class="matches-pane-nav" aria-label="Terminal panels">
+        <button type="button" class="matches-pane-nav__btn is-active" data-matches-pane="trade">Trade Builder</button>
+        <button type="button" class="matches-pane-nav__btn" data-matches-pane="live">Market Intelligence</button>
+      </nav>
 
-        <section class="card card--manual matches-trade-card">
-          <h2>Place Match</h2>
-          <div class="manual-account-state">
-            <span class="subtle small">Account:</span>
-            <strong id="matchesAccountState">Not logged in</strong>
-          </div>
-          <p class="subtle small barrier-label" title="Barrier is the digit the spot must match at contract expiry.">
-            Barrier digit (0–9) · <span class="subtle">Deriv-style: <strong>blue</strong> bar = most appearances, <strong>red</strong> = least. ▲▼ = recent vs older half. Circles = digit buttons.</span>
-          </p>
-          <input type="hidden" id="matchesBarrier" value="5" />
-          <div class="digit-grid-wrap">
-            <div class="digit-grid matches-digit-grid" id="matchesDigitGrid" role="group" aria-label="Barrier digit 0–9">
-              {% for d in range(10) %}
-              <button type="button" class="digit-cell matches-digit-btn" data-digit="{{ d }}">
-                <span class="digit-cell-digit">{{ d }}</span>
-                <div class="digit-cell-bar-row">
-                  <span class="digit-cell-bar-track" aria-hidden="true">
-                    <span class="digit-cell-bar-fill"></span>
-                  </span>
-                  <span class="digit-cell-trend" aria-hidden="true" title="Recent vs older ticks">·</span>
+      <main class="matches-terminal-grid" id="matchesPaneScroll">
+        <!-- LEFT — Market Intelligence -->
+        <aside class="matches-panel matches-panel--market matches-live-card" id="matchesPaneLive">
+          <div class="terminal-card terminal-card--intel">
+            <header class="terminal-card__head">
+              <h2 class="terminal-card__title">Live Market Intelligence</h2>
+              <span class="terminal-chip terminal-chip--live">R_100</span>
+            </header>
+
+            <div class="terminal-quote-row">
+              <div class="terminal-stat">
+                <span class="terminal-label">Last price</span>
+                <div class="matches-value-row">
+                  <strong id="matchesLivePrice" class="terminal-value">--</strong>
+                  <span id="matchesPriceArrow" class="matches-tick-arrow" aria-hidden="true"></span>
+                  <span id="matchesPricePct" class="matches-tick-pct terminal-label" title="Change vs previous tick"></span>
                 </div>
-                <span class="digit-cell-pct">--</span>
-              </button>
-              {% endfor %}
+              </div>
+              <div class="terminal-stat terminal-stat--highlight">
+                <span class="terminal-label">Last digit</span>
+                <div class="matches-value-row">
+                  <strong id="matchesLiveDigit" class="terminal-value terminal-value--digit matches-live-digit">--</strong>
+                  <span id="matchesDigitArrow" class="matches-tick-arrow matches-tick-arrow--digit" aria-hidden="true"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="terminal-section terminal-section--digit-grid terminal-section--digit-hero">
+              <span class="terminal-label">Select barrier · live % · tap to trade</span>
+              <input type="hidden" id="matchesBarrier" value="5" />
+              <div class="digit-grid-wrap matches-digit-grid-wrap">
+                <div id="matchesDigitPointer" class="digit-pointer digit-pointer--matches hidden" aria-hidden="true">▼</div>
+                <div class="digit-grid matches-digit-grid matches-freq-grid" id="matchesDigitGrid" role="group" aria-label="Barrier digit 0–9">
+                  {% for d in range(10) %}
+                  <button type="button" class="digit-cell matches-digit-btn" data-digit="{{ d }}">
+                    <span class="digit-cell-digit">{{ d }}</span>
+                    <div class="digit-cell-bar-row">
+                      <span class="digit-cell-bar-track" aria-hidden="true">
+                        <span class="digit-cell-bar-fill"></span>
+                      </span>
+                      <span class="digit-cell-trend" aria-hidden="true" title="Recent vs older ticks">·</span>
+                    </div>
+                    <span class="digit-cell-pct">--</span>
+                  </button>
+                  {% endfor %}
+                </div>
+              </div>
+              <p class="subtle small matches-digit-hero-hint">▼ pointer follows live ticks · ▲/▼ trend · % = frequency</p>
+            </div>
+
+            <div class="terminal-section terminal-section--ticker">
+              <span class="terminal-label">Live digit stream</span>
+              <div id="matchesTicker" class="matches-ticker matches-ticker--compact" aria-live="polite">
+                <div id="matchesTickerStrip" class="matches-ticker-strip"></div>
+              </div>
+            </div>
+
+            <details class="terminal-ai-details">
+              <summary class="terminal-label">Market imbalance advisory</summary>
+            <div id="matchesOpportunityBanner" class="matches-ai-opp-card matches-opportunity matches-ai-opp-card--nested" aria-live="polite">
+              <header class="matches-ai-opp-card__head">
+                <div>
+                  <h3 class="matches-ai-opp-card__title">AI Opportunity</h3>
+                  <p class="matches-ai-opp-card__disclaimer">Advisory only · no auto-trading</p>
+                </div>
+                <span id="matchesAiConfidenceTier" class="matches-ai-tier matches-ai-tier--scan">Scanning</span>
+              </header>
+
+              <div class="matches-ai-opp-hero">
+                <span class="terminal-label">Best opportunity</span>
+                <strong id="matchesOpportunityTitle" class="matches-ai-opp-hero__value">Scanning for imbalance...</strong>
+                <p id="matchesOpportunityText" class="matches-ai-opp-hero__sub subtle small">Waiting for enough ticks to evaluate under/over-representation.</p>
+              </div>
+
+              <div class="matches-ai-opp-score-row">
+                <div class="matches-ai-opp-score">
+                  <span class="terminal-label">Confidence score</span>
+                  <strong id="matchesAiConfidenceScore" class="matches-ai-opp-score__value">--</strong>
+                </div>
+                <div class="matches-signal-meter matches-signal-meter--opp">
+                  <div id="matchesSignalMeterFill" class="matches-signal-meter__fill"></div>
+                </div>
+              </div>
+
+              <div class="matches-ai-opp-grid">
+                <div class="matches-ai-opp-item matches-ai-opp-item--under">
+                  <span class="terminal-label">Underrepresented</span>
+                  <strong id="matchesUnderDigit" class="matches-ai-digit-chip">--</strong>
+                </div>
+                <div class="matches-ai-opp-item matches-ai-opp-item--over">
+                  <span class="terminal-label">Overrepresented</span>
+                  <strong id="matchesOverDigit" class="matches-ai-digit-chip">--</strong>
+                </div>
+                <div class="matches-ai-opp-item">
+                  <span class="terminal-label">Recommended contract</span>
+                  <strong id="matchesAiRecommendedContract">—</strong>
+                </div>
+                <div class="matches-ai-opp-item">
+                  <span class="terminal-label">Suggested stake level</span>
+                  <strong id="matchesAiSuggestedStake">—</strong>
+                </div>
+              </div>
+
+              <div class="matches-ai-opp-footer">
+                <strong id="matchesSignalLabel" class="terminal-signal-badge">NO EDGE</strong>
+                <strong id="matchesConfidenceBadge" class="terminal-confidence-badge hidden" aria-hidden="true">--</strong>
+                <p id="matchesSignalDetail" class="subtle small">Collecting enough samples to estimate short-term imbalance.</p>
+              </div>
+            </div>
+            </details>
+
+            <details class="terminal-coach-details matches-fit-hide">
+              <summary class="terminal-label">Match coach &amp; entry hints</summary>
+              <div class="matches-coach matches-coach--embedded">
+                <ul id="matchesCoachList" class="matches-coach-list" aria-live="polite"></ul>
+                <div id="matchesCoachEntriesQuick" class="matches-coach-entries matches-coach-entries--quick" aria-label="Quick entry digits"></div>
+                <div class="matches-coach-entries-wrap">
+                  <div id="matchesCoachEntries" class="matches-coach-entries" aria-label="Possible entry digits"></div>
+                </div>
+                <div class="matches-rising-rank subtle small" role="group" aria-label="Rising digit rank for entry">
+                  <span class="matches-rising-rank__label">Rising entry uses:</span>
+                  <label class="matches-rising-rank__opt">
+                    <input type="radio" name="matchesRisingRank" value="1" checked />
+                    1st strongest ▲
+                  </label>
+                  <label class="matches-rising-rank__opt">
+                    <input type="radio" name="matchesRisingRank" value="2" />
+                    2nd increasing ▲
+                  </label>
+                </div>
+                <div class="matches-coach-actions">
+                  <button type="button" id="matchesApplyHotBtn" class="btn btn-sm btn-blue">Use hottest digit</button>
+                  <button type="button" id="matchesApplyColdBtn" class="btn btn-sm btn-blue">Use coldest digit</button>
+                  <button type="button" id="matchesApplyRisingBtn" class="btn btn-sm btn-blue">Use rising digit</button>
+                  <button type="button" id="matchesApplyLastDigitBtn" class="btn btn-sm btn-blue">Barrier = last digit</button>
+                </div>
+              </div>
+            </details>
+
+            <div class="matches-live-meta matches-fit-hide" aria-hidden="true">
+              <div class="matches-live-digit-bar" id="matchesLiveDigitBar" role="group" aria-label="Barrier digit 0–9">
+                {% for d in range(10) %}
+                <button type="button" class="matches-live-digit-btn matches-barrier-pick-btn" data-digit="{{ d }}">{{ d }}</button>
+                {% endfor %}
+              </div>
+              <div id="matchesDigitHistory" class="matches-history-strip"></div>
+              <p class="subtle small" id="matchesTickPreview">Tick vs barrier: —</p>
             </div>
           </div>
-          <label class="stake-row-label">
-            Stake (USD)
-            <input id="matchesStake" type="number" step="0.01" min="0.01" value="1" />
-          </label>
-          <label class="stake-row-label">
-            Duration (ticks)
-            <input id="matchesDurationTicks" type="number" step="1" min="1" max="10" value="5" />
-          </label>
-          <div class="matches-execution-headline">
-            <div><span class="subtle small">Risk</span><strong id="matchesRiskLevel">MEDIUM</strong></div>
-            <div><span class="subtle small">Confidence</span><strong id="matchesConfidence">--</strong></div>
+        </aside>
+
+        <!-- CENTER — Trade Builder · Summary · Active Contract -->
+        <section class="matches-panel matches-panel--builder matches-trade-card" id="matchesPaneTrade">
+          <div class="matches-center-stack">
+            <div class="terminal-card terminal-card--builder terminal-card--stack-item">
+            <header class="terminal-card__head terminal-card__head--builder">
+              <div>
+                <h2 class="terminal-card__title">Digit Match Contract</h2>
+                <p class="terminal-subline">
+                  Barrier <strong id="matchesSelectedDigitHead">--</strong>
+                  · Live <strong id="matchesLiveDigitCompact" class="matches-live-digit">--</strong>
+                </p>
+              </div>
+              <span id="matchesAccountState" class="terminal-account-pill subtle small">Not logged in</span>
+            </header>
+
+            <div class="terminal-contract-types" role="group" aria-label="Contract type">
+              <button type="button" class="terminal-contract-type is-active" aria-pressed="true">Match</button>
+              <button type="button" class="terminal-contract-type" disabled title="Coming soon">Differs</button>
+              <button type="button" class="terminal-contract-type" disabled title="Coming soon">Over</button>
+              <button type="button" class="terminal-contract-type" disabled title="Coming soon">Under</button>
+            </div>
+
+            <div class="terminal-section matches-builder-digit-section">
+              <span class="terminal-label">Quick barrier pick</span>
+              <div class="matches-builder-digit-grid" role="group" aria-label="Barrier digit 0–9">
+                {% for d in range(10) %}
+                <button type="button" class="matches-builder-digit-btn matches-barrier-pick-btn" data-digit="{{ d }}">{{ d }}</button>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div class="terminal-controls-row">
+              <div class="terminal-section terminal-section--ticks">
+                <span class="terminal-label">Tick duration</span>
+                <div class="terminal-tick-pills" role="group" aria-label="Duration in ticks">
+                  {% for t in [1, 2, 3, 4, 5, 10] %}
+                  <button type="button" class="terminal-tick-pill" data-ticks="{{ t }}">{{ t }}</button>
+                  {% endfor %}
+                </div>
+                <input id="matchesDurationTicks" type="hidden" value="5" />
+              </div>
+              <div class="terminal-section terminal-section--stake">
+                <label class="terminal-label" for="matchesStake">Stake</label>
+                <div class="terminal-stake-wrap">
+                  <input id="matchesStake" class="terminal-stake-input" type="number" step="0.01" min="0.01" value="1" />
+                  <span class="terminal-stake-suffix">USD</span>
+                </div>
+              </div>
+            </div>
+
+            </div>
+
+            <div id="matchesTradeSummary" class="terminal-card terminal-card--stack-item trade-summary-engine" aria-live="polite">
+              <header class="trade-summary-engine__head">
+                <h3 class="trade-summary-engine__title">Trade Summary</h3>
+                <span class="trade-summary-engine__live">Live preview</span>
+              </header>
+
+              <div class="trade-summary-engine__impact">
+                <div class="trade-summary-engine__impact-item trade-summary-engine__impact-item--profit">
+                  <span class="terminal-label">Expected profit</span>
+                  <strong id="matchesSummaryProfit" class="trade-summary-engine__impact-value">Updating…</strong>
+                </div>
+                <div class="trade-summary-engine__impact-item trade-summary-engine__impact-item--payout">
+                  <span class="terminal-label">Expected payout</span>
+                  <strong id="matchesQuotePayout" class="trade-summary-engine__impact-value">Updating…</strong>
+                </div>
+              </div>
+
+              <div class="trade-summary-engine__grid">
+                <div class="trade-summary-engine__item">
+                  <span class="terminal-label">Stake</span>
+                  <strong id="matchesSummaryStake">$1.00</strong>
+                </div>
+                <div class="trade-summary-engine__item trade-summary-engine__item--digit">
+                  <span class="terminal-label">Barrier digit</span>
+                  <strong id="matchesSummaryBarrier">5</strong>
+                </div>
+                <div class="trade-summary-engine__item">
+                  <span class="terminal-label">Tick duration</span>
+                  <strong id="matchesSummaryTicks">5 ticks</strong>
+                </div>
+                <div class="trade-summary-engine__item">
+                  <span class="terminal-label">Confidence score</span>
+                  <strong id="matchesConfidence">Collecting…</strong>
+                </div>
+                <div class="trade-summary-engine__item">
+                  <span class="terminal-label">Risk level</span>
+                  <strong id="matchesRiskLevel">MEDIUM</strong>
+                </div>
+                <div class="trade-summary-engine__item trade-summary-engine__item--contract">
+                  <span class="terminal-label">Contract</span>
+                  <strong>Digit Match</strong>
+                </div>
+              </div>
+
+              <p class="trade-summary-engine__meta subtle small matches-fit-hide">
+                Ask <strong id="matchesQuoteAsk">—</strong>
+                · Breakeven <strong id="matchesExpectedEdge">—</strong>
+                · Selected <strong id="matchesSelectedDigit">5</strong>
+              </p>
+            </div>
+
+            <div id="matchesActiveContractPanel" class="terminal-card terminal-card--stack-item terminal-card--active matches-active-contract hidden" aria-live="polite">
+              <header class="matches-active-contract__head">
+                <h3 class="matches-active-contract__title">Active Contract</h3>
+                <span id="matchesActiveStatus" class="matches-active-status matches-active-status--waiting">Waiting</span>
+              </header>
+              <div class="matches-active-contract__grid">
+                <div class="matches-active-field">
+                  <span class="terminal-label">Contract ID</span>
+                  <strong id="matchesActiveContractId" class="matches-active-mono">—</strong>
+                </div>
+                <div class="matches-active-field">
+                  <span class="terminal-label">Type</span>
+                  <strong id="matchesActiveContractType">Digit Match</strong>
+                </div>
+                <div class="matches-active-field matches-active-field--digit">
+                  <span class="terminal-label">Digit</span>
+                  <strong id="matchesActiveBarrier">—</strong>
+                </div>
+                <div class="matches-active-field">
+                  <span class="terminal-label">Stake</span>
+                  <strong id="matchesActiveStake">—</strong>
+                </div>
+                <div class="matches-active-field">
+                  <span class="terminal-label">Entry price</span>
+                  <strong id="matchesActiveEntryPrice">—</strong>
+                </div>
+                <div class="matches-active-field">
+                  <span class="terminal-label">Current tick</span>
+                  <strong id="matchesActiveCurrentTick">0</strong>
+                </div>
+                <div class="matches-active-field">
+                  <span class="terminal-label">Remaining</span>
+                  <strong id="matchesActiveRemainingTicks">—</strong>
+                </div>
+                <div class="matches-active-field">
+                  <span class="terminal-label">Potential payout</span>
+                  <strong id="matchesActivePayout">—</strong>
+                </div>
+              </div>
+
+              <div id="matchesContractTrail" class="matches-contract-trail matches-contract-trail--compact">
+                <div class="matches-contract-trail__head">
+                  <span class="terminal-label">Tick sequence</span>
+                  <span id="matchesContractTrailStatus" class="matches-contract-trail__status">Waiting…</span>
+                </div>
+                <div id="matchesContractProgress" class="matches-contract-progress">
+                  <div class="matches-contract-progress__track">
+                    <span id="matchesContractProgressFill" class="matches-contract-progress__fill"></span>
+                  </div>
+                  <span id="matchesContractProgressLabel" class="terminal-label">0 / 0</span>
+                </div>
+                <div id="matchesContractTrailStrip" class="matches-contract-trail-strip matches-contract-trail-strip--chips"></div>
+                <p id="matchesContractTrailNote" class="subtle small matches-contract-trail__note"></p>
+              </div>
+            </div>
+
+            <p class="subtle small terminal-buy-hint matches-fit-hide matches-center-stack__hint">Execution controls are pinned to the bottom bar · Double-click a digit to buy · <kbd>Enter</kbd> to execute</p>
           </div>
-          <p class="subtle small">
-            Payout and ask come from Deriv <code>proposal</code> (never hardcoded). Buy sends <code>proposal_id</code> — no full page reload.
-          </p>
-          <div class="matches-quote-line subtle small">
-            Payout <strong id="matchesQuotePayout">--</strong> · Ask <strong id="matchesQuoteAsk">--</strong>
-          </div>
-          <div class="matches-quote-line subtle small">
-            Expected edge <strong id="matchesExpectedEdge">--</strong> · Selected digit <strong id="matchesSelectedDigit">--</strong>
-          </div>
-          <p id="matchesBuyCooldown" class="subtle small matches-buy-hint hidden" aria-live="polite"></p>
-          <button id="matchesBuyBtn" type="button" class="btn btn-teal btn-trade-wide matches-buy-strong">EXECUTE BUY MATCH</button>
-          <p class="subtle small">
-            <strong>One-click:</strong> double-click a digit above to set barrier and buy (when logged in). Press <kbd>Enter</kbd> to buy with the selected digit.
-          </p>
         </section>
+
+        <!-- RIGHT — Performance · Trade Timeline -->
+        <aside class="matches-panel matches-panel--session">
+          <div class="matches-right-stack">
+            <div class="terminal-card session-perf-card terminal-card--stack-item">
+            <header class="terminal-card__head session-perf-card__head">
+              <h2 class="terminal-card__title">Session Performance</h2>
+              <span id="matchesSessionBadge" class="session-perf-badge session-perf-badge--idle">No trades</span>
+            </header>
+
+            <div class="session-perf-hero">
+              <div class="session-perf-hero__stat session-perf-hero__stat--balance">
+                <span class="terminal-label">Account balance</span>
+                <strong id="matchesSessionBalance" class="session-perf-hero__value">Login to view</strong>
+              </div>
+              <div class="session-perf-hero__stat session-perf-hero__stat--pnl">
+                <span class="terminal-label">Session P/L</span>
+                <strong id="matchesSessionPnl" class="session-perf-hero__value">$0.00</strong>
+              </div>
+            </div>
+
+            <div class="session-perf-winloss" aria-label="Win loss summary">
+              <div class="session-perf-winloss__counts">
+                <div class="session-perf-winloss__item session-perf-winloss__item--win">
+                  <span class="terminal-label">Winning trades</span>
+                  <strong id="matchesWinningTrades">0</strong>
+                </div>
+                <div class="session-perf-winloss__item session-perf-winloss__item--loss">
+                  <span class="terminal-label">Losing trades</span>
+                  <strong id="matchesLosingTrades">0</strong>
+                </div>
+              </div>
+              <div class="session-perf-winloss__track" aria-hidden="true">
+                <span id="matchesWinLossBarWin" class="session-perf-winloss__fill session-perf-winloss__fill--win" style="width: 0%"></span>
+                <span id="matchesWinLossBarLoss" class="session-perf-winloss__fill session-perf-winloss__fill--loss" style="width: 0%"></span>
+              </div>
+            </div>
+
+            <div class="session-perf-grid">
+              <div class="session-perf-stat">
+                <span class="terminal-label">Win rate</span>
+                <strong id="matchesWinRate">0.0%</strong>
+              </div>
+              <div class="session-perf-stat">
+                <span class="terminal-label">Total trades</span>
+                <strong id="matchesTotalTrades">0</strong>
+              </div>
+              <div class="session-perf-stat">
+                <span class="terminal-label">Current streak</span>
+                <strong id="matchesStreak">Flat</strong>
+              </div>
+              <div class="session-perf-stat">
+                <span class="terminal-label">ROI</span>
+                <strong id="matchesSessionRoi">0.0%</strong>
+              </div>
+              <div class="session-perf-stat session-perf-stat--highlight-win">
+                <span class="terminal-label">Largest win</span>
+                <strong id="matchesLargestWin">None yet</strong>
+              </div>
+              <div class="session-perf-stat session-perf-stat--highlight-loss">
+                <span class="terminal-label">Largest loss</span>
+                <strong id="matchesLargestLoss">None yet</strong>
+              </div>
+            </div>
+
+            <div class="session-perf-last">
+              <span class="terminal-label">Last trade result</span>
+              <p class="matches-last-contract session-perf-last__text" id="matchesLastContract">No settled trades this session</p>
+            </div>
+
+            </div>
+
+            <div class="terminal-card terminal-card--timeline terminal-card--stack-item terminal-card--flex">
+            <div class="trade-timeline-panel">
+              <header class="trade-timeline-panel__head">
+                <h3 class="trade-timeline-panel__title">Trade Timeline</h3>
+                <span id="matchesTimelineCount" class="trade-timeline-panel__count">0 trades</span>
+              </header>
+
+              <div class="trade-timeline-filters" role="group" aria-label="Timeline filters">
+                <button type="button" class="trade-timeline-filter" data-filter="wins" aria-pressed="false">Wins</button>
+                <button type="button" class="trade-timeline-filter" data-filter="losses" aria-pressed="false">Losses</button>
+                <button type="button" class="trade-timeline-filter is-active" data-filter="session" aria-pressed="true">Session</button>
+                <button type="button" class="trade-timeline-filter" data-filter="today" aria-pressed="false">Today</button>
+              </div>
+
+              <div class="trade-timeline-table-wrap">
+                <table class="trade-timeline-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Time</th>
+                      <th scope="col">Contract</th>
+                      <th scope="col">Barrier</th>
+                      <th scope="col">Stake</th>
+                      <th scope="col">Result</th>
+                      <th scope="col">P/L</th>
+                    </tr>
+                  </thead>
+                  <tbody id="matchesTimelineBody">
+                    <tr class="trade-timeline-empty">
+                      <td colspan="6">No trades yet this session</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            </div>
+          </div>
+        </aside>
       </main>
+
+      <div id="matchesOutcomeLayer" class="matches-outcome-layer" aria-live="polite" aria-atomic="true"></div>
+
+      <footer class="matches-exec-bar" id="matchesExecBar" aria-label="Trade execution">
+        <div class="matches-exec-bar__inner">
+          <div class="matches-exec-bar__stats" aria-live="polite">
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Contract</span>
+              <strong id="matchesExecContract">Digit Match</strong>
+            </div>
+            <div class="matches-exec-stat matches-exec-stat--digit">
+              <span class="matches-exec-label">Barrier</span>
+              <strong id="matchesExecBarrier">5</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Ticks</span>
+              <strong id="matchesExecTicks">5</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Stake</span>
+              <strong id="matchesExecStake">1.00 USD</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Payout</span>
+              <strong id="matchesExecPayout">--</strong>
+            </div>
+            <div class="matches-exec-stat matches-exec-stat--profit">
+              <span class="matches-exec-label">Profit</span>
+              <strong id="matchesExecProfit">--</strong>
+            </div>
+          </div>
+          <div class="matches-exec-bar__actions">
+            <p id="matchesApiWarning" class="matches-exec-warning hidden" role="alert">Connect your Deriv account to trade.</p>
+            <p id="matchesBuyCooldown" class="matches-exec-cooldown subtle small hidden" aria-live="polite"></p>
+            <button id="matchesBuyBtn" type="button" class="btn btn-teal matches-exec-btn matches-buy-strong">Execute Trade</button>
+          </div>
+        </div>
+      </footer>
     </div>
 {% endblock %}

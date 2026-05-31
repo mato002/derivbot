@@ -14,13 +14,24 @@ import os
 _LOCAL_API_TOKEN = ""
 API_TOKEN = (os.environ.get("DERIVBOT_API_TOKEN") or _LOCAL_API_TOKEN).strip()
 
+# Defaults until you save Stake / TP / SL on the dashboard (Control Panel → Save Settings).
 BASE_STAKE = 1000
 TAKE_PROFIT = 500
 STOP_LOSS = 200
+# If False, each auto trade uses the stake you saved in the UI (current_stake).
+# If True, stake is capped at min(saved_stake, 1% of balance) — e.g. ~31 on a 3166 balance.
+FRACTIONAL_STAKE_SIZING = False
+# Never stake more than this fraction of live balance (0.95 = leave ~5% buffer).
+STAKE_MAX_BALANCE_FRACTION = 0.95
+# If False, every trade uses the same saved stake (Deriv default — no doubling after losses).
+# If True, stake doubles after each loss (martingale), up to max steps in bot_engine.
+MARTINGALE_ON_LOSS = False
 # OAuth2 "App ID" from developers.deriv.com → Registered Apps (copy exactly; case-sensitive).
 DERIV_OAUTH_CLIENT_ID = "337lYj6ng9qb4b4aeWcuq"
 # WebSocket app_id for ws.derivws.com endpoint (keep numeric default unless Deriv gives you another).
 DERIV_WS_APP_ID = "1089"
+# Optional: override ``Deriv-App-ID`` for api.derivws.com (PAT / OTP REST). Env: DERIV_TRADING_API_APP_ID
+DERIV_TRADING_API_APP_ID = os.environ.get("DERIV_TRADING_API_APP_ID", "").strip()
 # Legacy OAuth app_id for Deriv authorize URL (must allow your callback URL in Deriv app settings).
 # Use your own numeric app_id here; falling back to WS app_id keeps local dev working.
 DERIV_LEGACY_OAUTH_APP_ID = DERIV_WS_APP_ID
@@ -33,11 +44,11 @@ SESSION_SECRET = "vs991lf7rf1tNpS687DtQlmXfo34ZFlGUonx_QV-UFt0rmafL-bRAqA0DLYLv9
 # Open the app with that same host (localhost vs 127.0.0.1 must match what you registered).
 DERIV_OAUTH_APPEND_REDIRECT_URI = True
 # OAuth redirect must match exactly what is registered on your Deriv app.
-# Production (Render): used when users open the site on this host; localhost requests still use local callback.
-# Override any time: set env DERIV_OAUTH_REDIRECT_URI.
+# Local dev default: ngrok tunnel (see COMMANDS_NOTES.md). Production: set env DERIV_OAUTH_REDIRECT_URI.
+_NGROK_LOCAL_CALLBACK = "https://duke-nonvolcanic-constrainedly.ngrok-free.dev/auth/deriv/callback"
 DERIV_OAUTH_REDIRECT_URI = (
     os.environ.get("DERIV_OAUTH_REDIRECT_URI", "").strip()
-    or "https://derivbot-438o.onrender.com/auth/deriv/callback"
+    or _NGROK_LOCAL_CALLBACK
 )
 # OAuth2 scopes requested during Login with Deriv (space separated).
 DERIV_OAUTH_SCOPE = "trade account_manage"
@@ -52,5 +63,6 @@ DERIV_AUTH_FLOW = "oauth2"
 DERIV_AUTH_PROMPT = "none"
 # Legacy login base URL (home.deriv.com path tends to show the same login/consent journey as Deriv UI).
 DERIV_LEGACY_LOGIN_BASE = "https://oauth.deriv.com/oauth2/authorize"
-# If REDIRECT_URI is empty and you deploy behind a known public URL, set e.g. https://yourdomain.com
-DERIV_PUBLIC_URL = ""
+# Public base URL when behind ngrok or a reverse proxy (optional; env overrides).
+# Example: https://duke-nonvolcanic-constrainedly.ngrok-free.dev
+DERIV_PUBLIC_URL = os.environ.get("DERIV_PUBLIC_URL", "").strip()

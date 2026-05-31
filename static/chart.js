@@ -59,8 +59,13 @@ const AnalysisChart = (() => {
 
     function resize() {
       const width = priceEl.clientWidth || 760;
-      main.applyOptions({ width, height: Math.max(360, Math.floor(width * 0.45)) });
-      rsiChart.applyOptions({ width, height: 170 });
+      const isV2 = document.body.classList.contains("analysis-v2-page");
+      const mainHeight = isV2
+        ? Math.max(320, Math.min(620, Math.floor(window.innerHeight * 0.48)))
+        : Math.max(360, Math.floor(width * 0.45));
+      const rsiHeight = isV2 ? Math.max(120, Math.floor(mainHeight * 0.28)) : 170;
+      main.applyOptions({ width, height: mainHeight });
+      rsiChart.applyOptions({ width, height: rsiHeight });
     }
 
     function fit() {

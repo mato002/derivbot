@@ -22,11 +22,57 @@ python bot.py
 python -m uvicorn app:app --reload
 ```
 
-Open in browser:
+Open in browser (pick one for your workflow):
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8000          # PAT token login only (localhost callback)
+https://YOUR-SUBDOMAIN.ngrok-free.dev   # OAuth "Login with Deriv" (use ngrok URL)
 ```
+
+## Local test with ngrok (OAuth + PAT)
+
+1. Start the app:
+
+```powershell
+cd C:\derivbot
+python -m uvicorn app:app --reload
+```
+
+2. In another terminal, start ngrok:
+
+```powershell
+ngrok http 8000
+```
+
+3. Copy the **https** forwarding URL (e.g. `https://duke-nonvolcanic-constrainedly.ngrok-free.dev`).
+
+4. Register on Deriv → Dashboard → your app → **OAuth redirect URL**:
+
+```text
+https://YOUR-SUBDOMAIN.ngrok-free.dev/auth/deriv/callback
+```
+
+5. Update `config.py` if your ngrok subdomain changed:
+
+```python
+_NGROK_LOCAL_CALLBACK = "https://YOUR-SUBDOMAIN.ngrok-free.dev/auth/deriv/callback"
+```
+
+Or set for this session only:
+
+```powershell
+$env:DERIV_OAUTH_REDIRECT_URI = "https://YOUR-SUBDOMAIN.ngrok-free.dev/auth/deriv/callback"
+```
+
+6. Open the bot **via the ngrok URL** (not localhost) when using **Login with Deriv**.
+
+Default in `config.py` is restored to:
+
+```text
+https://duke-nonvolcanic-constrainedly.ngrok-free.dev/auth/deriv/callback
+```
+
+If that tunnel is offline, replace it with your current ngrok URL.
 
 ## Deriv tokens (after `app.deriv.com` changes)
 
@@ -56,7 +102,7 @@ Register this on your Deriv OAuth application:
 https://derivbot-438o.onrender.com/auth/deriv/callback
 ```
 
-Optional: set Render env `DERIV_OAUTH_REDIRECT_URI` to override `config.py`.
+Set Render env `DERIV_OAUTH_REDIRECT_URI` to that URL (overrides ngrok default in `config.py`).
 
 ## Verify app is responding
 

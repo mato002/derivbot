@@ -14,10 +14,20 @@
         } catch (e) {}
       })();
     </script>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?v=dash-terminal-v1" />
+    <link rel="stylesheet" href="/static/dashboard-terminal.css?v=light-theme-v1" />
     {% block extra_head %}{% endblock %}
   </head>
   <body class="platform-body trading-shell {% block body_class %}{% endblock %}">
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem("derivbot_theme_pref") === "light") {
+            document.body.classList.add("trading-theme-light");
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script>
       (function () {
         try {
@@ -53,32 +63,47 @@
     </div>
 
     <header class="trading-top-header">
-      <div class="trading-brand">
-        <span class="trading-brand__logo">MT</span>
-        <div>
-          <strong class="trading-brand__name">Matechtraders</strong>
-          <span class="trading-brand__tagline">Automation Platform</span>
+      <div class="trading-header-zone trading-header-zone--left">
+        <div class="trading-brand">
+          <span class="trading-brand__logo">MT</span>
+          <div>
+            <strong class="trading-brand__name">Matechtraders</strong>
+            <span id="authAccount" class="trading-header-account">Not logged in</span>
+          </div>
         </div>
       </div>
-      <div class="trading-account-bar">
-        <span class="connection-dot" id="connectionStatusDot"></span>
-        <span class="connection-text">API Connected</span>
-        <a href="https://deriv.com/" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Deposit</a>
+      <div class="trading-header-zone trading-header-zone--center">
+        <div class="trading-header-status">
+          <span class="connection-dot" id="connectionStatusDot"></span>
+          <span class="connection-text" id="connectionStatusText">API Connected</span>
+        </div>
+        <span class="header-account-type" id="headerAccountType"></span>
+        <div class="trading-header-balance">
+          <span class="trading-header-balance__label">Balance</span>
+          <strong id="headerWalletBalance" class="trading-header-balance__amt">--</strong>
+        </div>
+        <span id="derivBalance" class="trading-header-balance__deriv visually-hidden">Deriv balance: --</span>
+      </div>
+      <div class="trading-header-zone trading-header-zone--right trading-account-bar">
+        <a href="https://deriv.com/" class="btn btn-blue btn-header-action" target="_blank" rel="noopener noreferrer">Deposit</a>
         <a id="headerWalletLoginBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login with Deriv</a>
         <button id="headerApiTokenBtn" type="button" class="btn btn-blue">API Token</button>
         <a id="headerSignupBtn" href="https://deriv.com/signup/" class="btn btn-start" target="_blank" rel="noopener noreferrer">Sign Up</a>
-        <button id="accessMenuBtn" type="button" class="btn btn-blue">Access ▾</button>
+        <button id="accessMenuBtn" type="button" class="header-icon-btn" title="Settings" aria-label="Settings">⚙</button>
         <div id="accessMenuDropdown" class="header-wallet-menu hidden">
           <a id="accessMenuLoginBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
           <button id="accessMenuApiTokenBtn" type="button" class="btn btn-blue">Login with API Token</button>
           <a id="accessMenuSignupBtn" class="btn btn-start" href="https://deriv.com/signup/" target="_blank" rel="noopener noreferrer">Sign Up</a>
         </div>
+        <button type="button" class="header-icon-btn header-icon-btn--notify" title="Notifications" aria-label="Notifications">
+          <span class="header-notify-dot" aria-hidden="true"></span>
+          🔔
+        </button>
         <button type="button" class="wallet-chip" id="headerWalletBtn" aria-haspopup="menu" aria-expanded="false">
           <span class="wallet-chip__logo" aria-hidden="true">D</span>
-          <span id="headerWalletBalance" class="wallet-chip__amt">--</span>
           <span class="wallet-chevron" aria-hidden="true">▾</span>
         </button>
-        <button type="button" class="builder-icon-btn" id="themeToggleBtn" title="Theme">◐</button>
+        <button type="button" class="header-icon-btn" id="themeToggleBtn" title="Theme" aria-label="Toggle theme">◐</button>
       </div>
       <div id="headerWalletDropdown" class="header-wallet-menu hidden">
         <div id="headerWalletCurrent" class="header-wallet-menu__current">Not logged in</div>
@@ -91,10 +116,10 @@
       <a href="/" class="module-link {% if active_nav == 'dashboard' %}module-link--active{% endif %}">Dashboard</a>
       <a href="/builder" class="module-link {% if active_nav == 'builder' %}module-link--active{% endif %}">Bot Builder</a>
       <a href="/manual-trader" class="module-link {% if active_nav == 'manual' %}module-link--active{% endif %}">Manual Trader</a>
-      <a href="/analysis" class="module-link {% if active_nav == 'analysis' %}module-link--active{% endif %}">Charts</a>
+      <a href="/analysis" class="module-link {% if active_nav == 'analysis' or active_nav == 'analysis-tool' %}module-link--active{% endif %}">Charts</a>
       <a href="/trading-bots" class="module-link {% if active_nav == 'bots' %}module-link--active{% endif %}">Trading Bots</a>
-      <a href="/analysis" class="module-link {% if active_nav == 'analysis-tool' %}module-link--active{% endif %}">Analysis Tool</a>
-      <a href="/strategies" class="module-link {% if active_nav == 'strategies' %}module-link--active{% endif %}">Strategies</a>
+      <a href="/analysis" class="module-link {% if active_nav == 'analysis' or active_nav == 'analysis-tool' %}module-link--active{% endif %}">Analysis Tool</a>
+      <a href="/strategies" class="module-link {% if active_nav == 'strategies' %}module-link--active{% endif %}">Runtime Policy</a>
       <a href="/matches" class="module-link {% if active_nav == 'matches' %}module-link--active{% endif %}">Matches</a>
       <a href="/copy-trading" class="module-link {% if active_nav == 'copy' %}module-link--active{% endif %}">Copy Trading</a>
       <a href="/tradingview" class="module-link {% if active_nav == 'tradingview' %}module-link--active{% endif %}">TradingView</a>
@@ -131,6 +156,6 @@
     <div id="toast" class="toast hidden"></div>
     {% block extra_scripts %}{% endblock %}
     <script src="/static/platform.js"></script>
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=matches-balance-sync-1"></script>
   </body>
 </html>

@@ -1,147 +1,390 @@
 {% extends "base.html" %}
 {% set active_nav = 'manual' %}
-{% block body_class %}manual-simple{% endblock %}
+{% block body_class %}manual-trader-page manual-has-exec-bar{% endblock %}
 {% block title %}Manual Trader — Deriv Platform{% endblock %}
 {% block extra_head %}
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 {% endblock %}
 {% block content %}
-    <div class="page-inner page-inner--dash">
-      <header class="topbar card card--hero">
-        <div class="topbar__head">
-          <div class="topbar__titles">
-            <h1>Manual Trader</h1>
-            <p class="subtle">Simple ticket: choose digit, set stake, tap Over/Under.</p>
+    <div class="manual-ws-root page-inner page-inner--dash page-inner--manual">
+      <div class="manual-auth-hooks" aria-hidden="true">
+        <a id="loginDerivBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login with Deriv</a>
+        <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+        <span id="authAccount" class="subtle">Not logged in</span>
+        <span id="derivBalance" class="subtle">Deriv balance: --</span>
+      </div>
+
+      <div id="hybridBanner" class="hybrid-banner hidden"></div>
+
+      <header class="card manual-topbar" aria-label="Market status">
+        <div class="manual-topbar__cluster">
+          <div class="manual-topbar__field">
+            <span class="manual-topbar__label">Balance</span>
+            <strong id="manualTopBalance" class="manual-topbar__value">--</strong>
           </div>
-          <div class="topbar__auth-btns">
-            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
-            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+          <div class="manual-topbar__field">
+            <span class="manual-topbar__label">Connection</span>
+            <span id="manualConnectionStatus" class="manual-status-pill manual-status-pill--offline">Offline</span>
           </div>
         </div>
-        <div class="topbar__sub">
-          <div class="auth-panel auth-panel--dash-line">
-            <span id="authAccount" class="subtle">Not logged in</span>
-            <span id="derivBalance" class="subtle deriv-balance-inline">Deriv balance: --</span>
+        <div class="manual-topbar__cluster manual-topbar__cluster--market">
+          <div class="manual-topbar__field">
+            <span class="manual-topbar__label">Contract</span>
+            <strong id="manualTopContractType" class="manual-topbar__value">DIGIT OVER</strong>
           </div>
-          <p class="subtle small topbar__sub-note">
-            <a href="/">Dashboard</a> — start/stop bot and full history
-          </p>
+          <div class="manual-topbar__field manual-topbar__field--symbol">
+            <span class="manual-topbar__label">Symbol</span>
+            <span class="manual-topbar__symbol-wrap">
+              <span id="manualMarketPulse" class="manual-market-pulse" aria-hidden="true"></span>
+              <strong id="manualTopSymbol" class="manual-topbar__value manual-topbar__value--symbol">R_100</strong>
+            </span>
+          </div>
+        </div>
+        <div class="manual-topbar__cluster manual-topbar__cluster--live" aria-live="polite">
+          <div class="manual-topbar__field">
+            <span class="manual-topbar__label">Last</span>
+            <strong id="liveTickPriceStrong" class="manual-topbar__value">--</strong>
+            <span id="manualPriceArrow" class="matches-tick-arrow" aria-hidden="true"></span>
+          </div>
+          <div class="manual-topbar__field">
+            <span class="manual-topbar__label">Digit</span>
+            <strong id="liveTickDigit" class="manual-topbar__value manual-topbar__value--digit matches-live-digit">--</strong>
+            <span id="manualDigitArrow" class="matches-tick-arrow matches-tick-arrow--digit" aria-hidden="true"></span>
+          </div>
+          <span id="liveTickPrice" class="visually-hidden"></span>
+        </div>
+        <div class="manual-topbar__micro" aria-hidden="true">
+          <span>Tr <strong id="manualTrend">—</strong></span>
+          <span>Mo <strong id="manualMomentum">—</strong></span>
+          <span>Vol <strong id="manualVolatility">—</strong></span>
+          <span>MA <strong id="manualMa">—</strong></span>
+          <span>RSI <strong id="manualRsi">—</strong></span>
         </div>
       </header>
 
-      <div id="hybridBanner" class="card hybrid-banner hidden"></div>
-
-      <div class="section-tabs">
-        <button type="button">Summary</button>
-        <button type="button">Transactions</button>
-        <button type="button">Journal</button>
-        <button type="button">Logs</button>
-      </div>
-      <main class="grid grid--dash manual-grid">
-        <section class="card manual-market-card">
-          <h2>Market context</h2>
-          <div class="manual-market-head">
-            <div>
-              <div class="subtle small">Live tick</div>
-              <strong id="liveTickPriceStrong">--</strong>
+      <main class="manual-workspace" id="manualPaneScroll">
+        <!-- LEFT 65% — Chart dominant -->
+        <section class="manual-ws-col manual-ws-col--left card manual-market-card" aria-label="Chart and market data">
+          <div class="manual-chart-block manual-chart-block--price" id="manualChartBlock">
+            <div class="manual-chart-toolbar">
+              <span class="manual-live-tag">
+                <span class="manual-live-dot" aria-hidden="true"></span>
+                Live chart
+              </span>
+              <div class="manual-chart-tf" role="group" aria-label="Chart timeframe">
+                <button type="button" class="manual-chart-btn is-active" data-manual-tf="1">1m</button>
+                <button type="button" class="manual-chart-btn" data-manual-tf="5">5m</button>
+                <button type="button" class="manual-chart-btn" data-manual-tf="15">15m</button>
+                <button type="button" class="manual-chart-btn" data-manual-tf="30">30m</button>
+              </div>
+              <div class="manual-chart-view" role="group" aria-label="Chart view">
+                <button type="button" class="manual-chart-btn is-active" data-manual-view="price">Price</button>
+                <button type="button" class="manual-chart-btn" data-manual-view="digit">Digit</button>
+                <button type="button" class="manual-chart-btn" data-manual-view="distribution">Distribution</button>
+              </div>
             </div>
-            <div>
-              <div class="subtle small">Trend</div>
-              <strong id="manualTrend">Sideways</strong>
-            </div>
-            <div>
-              <div class="subtle small">Volatility</div>
-              <strong id="manualVolatility">--</strong>
+            <div id="manualVizChart" class="manual-chart-stage">
+              <div id="manualPriceChart" class="tv-chart manual-chart"></div>
             </div>
           </div>
-          <div id="manualPriceChart" class="tv-chart manual-chart"></div>
-          <div class="subtle small manual-indicators">
-            MA(20): <strong id="manualMa">--</strong> · RSI(14): <strong id="manualRsi">--</strong>
+
+          <div class="manual-tick-strip">
+            <span class="manual-strip-label">Tick stream</span>
+            <div id="manualTicker" class="manual-ticker-track" aria-live="polite">
+              <div id="manualTickerStrip" class="manual-ticker-chips"></div>
+            </div>
+          </div>
+
+          <div class="manual-dist-block" id="manualDistBlock">
+            <div class="manual-dist-head">
+              <span class="manual-strip-label">Digit distribution</span>
+              <label class="manual-dist-sample">
+                <span class="manual-strip-label">n</span>
+                <select id="digitPredictionSample">
+                  <option value="60">60</option>
+                  <option value="120" selected>120</option>
+                  <option value="240">240</option>
+                </select>
+              </label>
+            </div>
+            <div id="manualVizDistribution">
+              <div id="manualDigitDistBars" class="manual-digit-dist" aria-label="Digit frequency"></div>
+            </div>
+          </div>
+
+          <div class="visually-hidden" aria-hidden="true">
+            <span id="manualAiTier"></span>
+            <strong id="manualAiRecommendation"></strong>
+            <p id="manualAiRecommendationSub"></p>
+            <strong id="manualAiConfidence"></strong>
+            <strong id="manualAiBias"></strong>
+            <strong id="manualAiOpportunity"></strong>
+            <strong id="manualAiColdDigit"></strong>
+            <strong id="manualAiHotDigit"></strong>
+            <div id="manualAiMeterFill"></div>
+            <div id="manualIntelPanel"></div>
           </div>
         </section>
 
-        <section class="card card--manual manual-trade-card">
-          <h2>Place trade</h2>
-          <div class="manual-account-state">
-            <span class="subtle small">Account:</span>
-            <strong id="manualAccountState">Not logged in</strong>
-          </div>
-          <div class="trade-type-row">
-            <span class="trade-type-label">Over / Under</span>
-            <div class="ou-toggle" role="group" aria-label="Contract type">
-              <button
-                type="button"
-                class="ou-btn ou-btn--over"
-                data-contract="DIGITOVER"
-                id="ouOverBtn"
-                title="OVER wins if the last digit is strictly greater than your selected barrier."
-              >
-                Over
-              </button>
-              <button
-                type="button"
-                class="ou-btn ou-btn--under"
-                data-contract="DIGITUNDER"
-                id="ouUnderBtn"
-                title="UNDER wins if the last digit is strictly lower than your selected barrier."
-              >
-                Under
-              </button>
-            </div>
-            <select id="manualContract" class="visually-hidden" aria-hidden="true" tabindex="-1">
-              <option value="DIGITOVER">DIGITOVER</option>
-              <option value="DIGITUNDER">DIGITUNDER</option>
-            </select>
-          </div>
-          <div class="digit-pred-head">
-            <p class="subtle small barrier-label" title="Barrier digit is the reference digit (0–9) used by Over/Under.">
-              Last digit prediction
-            </p>
-            <label class="digit-sample-label subtle small">
-              Sample
-              <select id="digitPredictionSample">
-                <option value="60">60 ticks</option>
-                <option value="120" selected>120 ticks</option>
-                <option value="240">240 ticks</option>
+        <!-- CENTER — Contract builder (Phase 5 focus) -->
+        <section class="manual-ws-col manual-ws-col--center manual-ws-col--builder card manual-builder-card" aria-label="Contract builder">
+          <div class="manual-builder">
+            <header class="manual-builder__head">
+              <h2 class="manual-builder__title">Contract builder</h2>
+              <span id="manualAccountState" class="manual-account-badge">Not logged in</span>
+            </header>
+
+            <div class="manual-builder__section manual-builder__section--type">
+              <span class="manual-builder__label">Contract type</span>
+              <div class="ou-toggle manual-ou-toggle manual-builder-ou" role="group" aria-label="Contract type">
+                <button type="button" class="ou-btn ou-btn--over" data-contract="DIGITOVER" id="ouOverBtn">Digit Over</button>
+                <button type="button" class="ou-btn ou-btn--under" data-contract="DIGITUNDER" id="ouUnderBtn">Digit Under</button>
+              </div>
+              <select id="manualContract" class="visually-hidden" aria-hidden="true" tabindex="-1">
+                <option value="DIGITOVER">DIGITOVER</option>
+                <option value="DIGITUNDER">DIGITUNDER</option>
               </select>
-            </label>
-          </div>
-          <div class="digit-live-row subtle small">
-            Live tick: <strong id="liveTickDigit">--</strong>
-            <span id="liveTickPrice" class="digit-live-price"></span>
-          </div>
-          <div class="digit-grid-wrap">
-            <div id="digitPointer" class="digit-pointer hidden" aria-hidden="true">▼</div>
-            <div class="digit-grid" id="digitGrid" role="group" aria-label="Barrier digit 0–9">
-              {% for d in range(10) %}
-              <button type="button" class="digit-cell" data-digit="{{ d }}">{{ d }}</button>
-              {% endfor %}
             </div>
-          </div>
-          <label class="stake-row-label">
-            Stake (USD)
-            <input id="manualStake" type="number" step="0.01" min="0.01" value="1" />
-          </label>
-          <div class="quick-stakes" role="group" aria-label="Quick stake buttons">
-            <button type="button" class="quick-stake-btn" data-stake="1">$1</button>
-            <button type="button" class="quick-stake-btn" data-stake="5">$5</button>
-            <button type="button" class="quick-stake-btn" data-stake="10">$10</button>
-            <button type="button" class="quick-stake-btn" data-stake="25">$25</button>
-          </div>
-          <input type="hidden" id="manualBarrier" value="5" />
-          <button id="manualTradeBtn" class="btn btn-teal btn-trade-wide">Place selected side now</button>
-          <p class="subtle small">One-tap mode: click <code>Over</code> or <code>Under</code> to place instantly. Shortcuts: <code>O</code>/<code>U</code> select side, <code>Enter</code> places selected side.</p>
-          <div class="card-lite">
-            <div><span>Recent contracts</span><strong id="manualRecentContracts">0</strong></div>
-            <div><span>P/L summary</span><strong id="manualPlSummary">$0.00</strong></div>
-            <div><span>Duration</span><strong id="manualDurationView">5 ticks</strong></div>
-            <div><span>Prediction</span><strong id="manualPredictionView">5</strong></div>
+
+            <section class="manual-barrier-section" aria-labelledby="manualBarrierHeading">
+              <div class="manual-barrier-section__head">
+                <h3 id="manualBarrierHeading" class="manual-builder__label">Barrier selection</h3>
+                <div class="manual-barrier-hero" aria-live="polite">
+                  <span class="manual-barrier-hero__label">Selected barrier</span>
+                  <div class="manual-barrier-hero__main">
+                    <strong id="manualBarrierHero" class="manual-barrier-hero__digit">5</strong>
+                    <span id="manualBarrierHeroSide" class="manual-barrier-hero__side">OVER</span>
+                  </div>
+                  <span class="manual-barrier-hero__live">
+                    Live digit <strong id="manualLiveDigitCompact" class="matches-live-digit">--</strong>
+                  </span>
+                </div>
+                <span id="manualPredictionView" class="visually-hidden" aria-hidden="true">5</span>
+              </div>
+              <input type="hidden" id="manualBarrier" value="5" />
+              <div class="digit-grid-wrap manual-barrier-grid-wrap">
+                <div id="digitPointer" class="digit-pointer hidden" aria-hidden="true">▼</div>
+                <div class="digit-grid matches-digit-grid manual-barrier-digit-grid" id="digitGrid" role="group" aria-label="Select barrier digit 0 to 9">
+                  {% for d in range(10) %}
+                  <button type="button" class="digit-cell digit-cell--simple" data-digit="{{ d }}">
+                    <span class="digit-cell-digit">{{ d }}</span>
+                    <span class="digit-cell-pct">--</span>
+                  </button>
+                  {% endfor %}
+                </div>
+              </div>
+            </section>
+
+            <div class="manual-builder__section manual-builder__section--params">
+              <div class="manual-builder__params">
+                <div class="manual-builder__param">
+                  <span class="manual-builder__label">Duration</span>
+                  <strong id="manualDurationView" class="manual-builder__param-val">1 tick</strong>
+                </div>
+                <div class="manual-builder__param manual-builder__param--stake">
+                  <span class="manual-builder__label">Stake</span>
+                  <div class="terminal-stake-wrap manual-stake-wrap">
+                    <input id="manualStake" class="terminal-stake-input" type="number" step="0.01" min="0.01" value="1" />
+                    <span class="terminal-stake-suffix">USD</span>
+                  </div>
+                </div>
+              </div>
+              <div class="quick-stakes manual-quick-stakes manual-builder-quick" role="group" aria-label="Quick stake">
+                <button type="button" class="quick-stake-btn" data-stake="1">$1</button>
+                <button type="button" class="quick-stake-btn" data-stake="5">$5</button>
+                <button type="button" class="quick-stake-btn" data-stake="10">$10</button>
+                <button type="button" class="quick-stake-btn" data-stake="25">$25</button>
+              </div>
+            </div>
+
+            <div class="manual-confidence manual-confidence--compact" aria-live="polite">
+                <h3 class="manual-builder__label">Signal confidence</h3>
+                <div class="manual-confidence__head">
+                  <strong id="manualConfPct" class="manual-confidence__pct">--</strong>
+                  <span id="manualSignalStrength" class="manual-confidence__strength">—</span>
+                </div>
+                <div class="manual-confidence__meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div id="manualConfMeterFill" class="manual-confidence__fill"></div>
+                </div>
+              </div>
+
+            <div class="manual-trade-summary manual-trade-summary--decision" aria-live="polite">
+              <h3 class="manual-builder__label">Trade summary</h3>
+              <dl class="manual-trade-summary__grid">
+                <div class="manual-trade-summary__row">
+                  <dt>Contract</dt>
+                  <dd id="manualSummaryContract">Digit Over</dd>
+                </div>
+                <div class="manual-trade-summary__row">
+                  <dt>Barrier</dt>
+                  <dd id="manualSummaryBarrier">5</dd>
+                </div>
+                <div class="manual-trade-summary__row">
+                  <dt>Stake</dt>
+                  <dd id="manualSummaryStake">1.00 USD</dd>
+                </div>
+                <div class="manual-trade-summary__row manual-trade-summary__row--hero">
+                  <dt>Expected payout</dt>
+                  <dd id="manualPotentialPayout">--</dd>
+                </div>
+                <div class="manual-trade-summary__row manual-trade-summary__row--hero manual-trade-summary__row--profit">
+                  <dt>Expected profit</dt>
+                  <dd id="manualPotentialProfit">--</dd>
+                </div>
+              </dl>
+              <p class="manual-trade-summary__meta subtle small">
+                Win <strong id="manualImpliedProb">--</strong>
+                · Risk <strong id="manualRiskLevel" class="manual-risk--medium">--</strong>
+              </p>
+              <span id="manualSummaryDuration" class="visually-hidden">1 tick</span>
+              <div id="manualActiveContractPanel" class="manual-active-strip hidden" aria-live="polite">
+                <span id="manualActiveStatus" class="manual-active-strip__status">Waiting</span>
+                <span>Tk <strong id="manualActiveCurrentTick">0</strong></span>
+                <span>Rm <strong id="manualActiveRemainingTicks">--</strong></span>
+                <span id="manualActiveStatusDetail" class="subtle small">—</span>
+                <span>Po <strong id="manualActiveLivePayout">--</strong></span>
+              </div>
+            </div>
+
+            <p id="manualRiskWarning" class="risk-warning hidden" role="alert"></p>
+            <button id="manualTradeBtn" type="button" class="visually-hidden" tabindex="-1" aria-hidden="true">Place trade</button>
+            <p class="subtle small manual-kbd-hint"><kbd>O</kbd>/<kbd>U</kbd> <kbd>Enter</kbd> <kbd>0</kbd>–<kbd>9</kbd></p>
+            <span id="manualBalanceAfterStake" class="visually-hidden" aria-hidden="true">--</span>
           </div>
         </section>
+
+        <!-- RIGHT — Compact session -->
+        <aside class="manual-ws-col manual-ws-col--right card manual-session-card" aria-label="Session">
+          <div class="manual-session">
+            <h2 class="manual-section-title">Session</h2>
+            <dl class="manual-session-grid">
+              <div class="manual-session-item">
+                <dt>Balance</dt>
+                <dd id="manualSessionBalance">--</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>P/L</dt>
+                <dd id="manualSessionPnl">--</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Wins</dt>
+                <dd id="manualSessionWins">0</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Losses</dt>
+                <dd id="manualSessionLosses">0</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Win rate</dt>
+                <dd id="manualWinRate">--</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Today</dt>
+                <dd id="manualContractsToday">0</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Streak</dt>
+                <dd id="manualStreak">—</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Best win</dt>
+                <dd id="manualLargestWin" class="profit-positive">—</dd>
+              </div>
+              <div class="manual-session-item">
+                <dt>Worst loss</dt>
+                <dd id="manualLargestLoss" class="profit-negative">—</dd>
+              </div>
+            </dl>
+            <p class="manual-session-foot subtle small">
+              Session P/L <strong id="manualPlSummary">$0.00</strong>
+            </p>
+            <span id="manualRecentContracts" class="visually-hidden">0</span>
+
+            <div class="manual-session-trades">
+              <span class="manual-strip-label">Recent trades</span>
+              <div id="manualRecentTrades" class="manual-session-trades-list" aria-live="polite">
+                <p class="subtle small terminal-trades-empty">No trades yet.</p>
+              </div>
+            </div>
+          </div>
+        </aside>
       </main>
-      <div class="manual-pane-nav" aria-label="Manual view switch">
-        <button type="button" class="digit-shift-btn" id="paneToTrade" aria-label="Show trade ticket">≪</button>
-        <button type="button" class="digit-shift-btn" id="paneToChart" aria-label="Show chart">≫</button>
-      </div>
+
+      <footer class="card manual-bottom-panel" aria-label="Journal and history">
+        <nav class="manual-bottom-tabs" role="tablist">
+          <button type="button" class="manual-bottom-tab is-active" data-manual-tab="journal" role="tab" aria-selected="true">Trade journal</button>
+          <button type="button" class="manual-bottom-tab" data-manual-tab="history" role="tab" aria-selected="false">Trade history</button>
+        </nav>
+        <div class="manual-bottom-body">
+          <div id="manualBottomJournal" class="manual-bottom-pane is-active" role="tabpanel">
+            <ul id="manualJournalList" class="manual-journal-list subtle small">
+              <li class="terminal-trades-empty">Loading journal…</li>
+            </ul>
+          </div>
+          <div id="manualBottomHistory" class="manual-bottom-pane" role="tabpanel" hidden>
+            <div class="manual-bottom-scroll">
+              <table class="manual-bottom-data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Side</th>
+                    <th>Digit</th>
+                    <th>Stake</th>
+                    <th>Result</th>
+                    <th>P/L</th>
+                  </tr>
+                </thead>
+                <tbody id="manualHistoryBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      <footer class="matches-exec-bar manual-exec-bar" id="manualExecBar" aria-label="Trade execution">
+        <div class="matches-exec-bar__inner manual-exec-bar__inner">
+          <div class="matches-exec-bar__stats manual-exec-bar__stats" aria-live="polite">
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Contract</span>
+              <strong id="manualExecContract">Digit Over</strong>
+            </div>
+            <div class="matches-exec-stat matches-exec-stat--digit">
+              <span class="matches-exec-label">Barrier</span>
+              <strong id="manualExecBarrier">5</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Duration</span>
+              <strong id="manualExecDuration">1 tick</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Stake</span>
+              <strong id="manualExecStake">1.00 USD</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">Payout</span>
+              <strong id="manualExecPayout">--</strong>
+            </div>
+            <div class="matches-exec-stat matches-exec-stat--profit">
+              <span class="matches-exec-label">Profit</span>
+              <strong id="manualExecProfit">--</strong>
+            </div>
+            <div class="matches-exec-stat">
+              <span class="matches-exec-label">After trade</span>
+              <strong id="manualExecBalanceAfter">--</strong>
+            </div>
+          </div>
+          <div class="matches-exec-bar__actions manual-exec-bar__actions">
+            <p id="manualExecWarning" class="matches-exec-warning hidden" role="alert">Connect your Deriv account to trade.</p>
+            <div class="manual-exec-bar__btns">
+              <button type="button" id="manualBuyOverBtn" class="btn btn-start matches-exec-btn manual-exec-btn manual-exec-btn--over">
+                Buy Over
+              </button>
+              <button type="button" id="manualBuyUnderBtn" class="btn btn-stop matches-exec-btn manual-exec-btn manual-exec-btn--under">
+                Buy Under
+              </button>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
 {% endblock %}

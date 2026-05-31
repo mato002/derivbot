@@ -250,6 +250,10 @@ function createBuilderWorkspace() {
   builderWorkspace.addChangeListener(() => {
     validateBuilderBlocks();
     drawBuilderMiniMap();
+    updateBuilderEmptyState();
+    if (typeof window.markBuilderStrategyDirty === "function") {
+      window.markBuilderStrategyDirty();
+    }
   });
 
   window.addEventListener("resize", () => {
@@ -261,8 +265,39 @@ function createBuilderWorkspace() {
     if (builderWorkspace) Blockly.svgResize(builderWorkspace);
     validateBuilderBlocks();
     drawBuilderMiniMap();
+    updateBuilderEmptyState();
+    mountBuilderFlyoutToHost();
   });
   return builderWorkspace;
+}
+
+function mountBuilderFlyoutToHost() {
+  const host = document.getElementById("builderFlyoutHost");
+  if (!host) return;
+  const toolboxDiv = document.querySelector(".blocklyToolboxDiv");
+  const flyout = document.querySelector(".blocklyFlyout");
+  if (toolboxDiv) {
+    toolboxDiv.style.display = "none";
+    toolboxDiv.setAttribute("aria-hidden", "true");
+  }
+  if (!flyout) return;
+  if (flyout.parentElement !== host) host.appendChild(flyout);
+  flyout.style.position = "relative";
+  flyout.style.left = "0";
+  flyout.style.top = "0";
+  flyout.style.height = "auto";
+  flyout.style.maxHeight = "min(38vh, 320px)";
+  flyout.style.width = "100%";
+  flyout.style.boxShadow = "none";
+  flyout.style.border = "none";
+  flyout.style.background = "transparent";
+  flyout.style.overflowY = "auto";
+  flyout.style.overflowX = "hidden";
+  const svg = flyout.querySelector("svg");
+  if (svg) {
+    svg.style.maxWidth = "100%";
+    svg.style.height = "auto";
+  }
 }
 
 function setBuilderSnapToGrid(enabled) {
@@ -285,6 +320,49 @@ function cleanBuilderWorkspaceLayout() {
     y += h + 24;
   });
   drawBuilderMiniMap();
+}
+
+function updateBuilderEmptyState() {
+  const el = document.getElementById("builderEmptyState");
+  if (!el || !builderWorkspace) return;
+  const count = builderWorkspace.getAllBlocks(false).length;
+  el.classList.toggle("hidden", count > 0);
+}
+
+function showBuilderCategory(categoryKey) {
+  if (!builderWorkspace || !builderToolboxConfig) return;
+  const categoryMap = {
+    analysis_logics: "Analysis Logics",
+    trade_parameters: "Trade parameters",
+    purchase_conditions: "Purchase conditions",
+    sell_conditions: "Sell conditions (optional)",
+    restart_conditions: "Restart trading conditions",
+    utility: "Utility",
+    contract_modifiers: "Contract modifiers",
+    analysis: "Analysis",
+    virtual_hook_switcher: "Virtual Hook Switcher",
+    binarytools: "Binarytools",
+  };
+  const name = categoryMap[categoryKey];
+  builderWorkspace.updateToolbox(builderToolboxConfig);
+  if (!name) {
+    window.requestAnimationFrame(mountBuilderFlyoutToHost);
+    return;
+  }
+  const toolbox = builderWorkspace.getToolbox?.();
+  if (!toolbox) {
+    window.requestAnimationFrame(mountBuilderFlyoutToHost);
+    return;
+  }
+  const items = typeof toolbox.getToolboxItems === "function" ? toolbox.getToolboxItems() : [];
+  const idx = items.findIndex((item) => {
+    const itemName = typeof item.getName === "function" ? item.getName() : item.name_ || "";
+    return String(itemName).toLowerCase() === name.toLowerCase();
+  });
+  if (idx >= 0 && typeof toolbox.selectItemByPosition === "function") {
+    toolbox.selectItemByPosition(idx);
+  }
+  window.requestAnimationFrame(mountBuilderFlyoutToHost);
 }
 
 function validateBuilderBlocks() {
@@ -355,12 +433,122 @@ function getBuilderWorkspace() {
   return builderWorkspace;
 }
 
+const BUILDER_SAFE_BLOCK_TYPES = new Set([
+  "repeat_3_condition",
+  "digit_threshold",
+  "buy_under_action",
+  "buy_over_action",
+  "analysis_trend",
+  "analysis_rsi",
+  "logic_gate",
+  "stake_config",
+  "loss_limit",
+  "profit_limit",
+  "restart_condition",
+]);
+
+function exportBuilderWorkspaceXml() {
+  if (!builderWorkspace || typeof Blockly === "undefined") return "";
+  const dom = Blockly.Xml.workspaceToDom(builderWorkspace);
+  return Blockly.Xml.domToText(dom);
+}
+
+function validateBuilderWorkspaceXml(xmlText) {
+  const text = String(xmlText || "").trim();
+  if (!text) throw new Error("Blockly XML is empty");
+  const re = /type="([^"]+)"/g;
+  let match;
+  while ((match = re.exec(text))) {
+    if (!BUILDER_SAFE_BLOCK_TYPES.has(match[1])) {
+      throw new Error(`Unsupported block type: ${match[1]}`);
+    }
+  }
+  return true;
+}
+
 function loadBuilderXml(xmlText) {
   if (!builderWorkspace || !xmlText || typeof Blockly === "undefined") return;
+  validateBuilderWorkspaceXml(xmlText);
   const dom = Blockly.utils.xml.textToDom(xmlText);
   builderWorkspace.clear();
   Blockly.Xml.domToWorkspace(dom, builderWorkspace);
-  window.requestAnimationFrame(() => Blockly.svgResize(builderWorkspace));
+  window.requestAnimationFrame(() => {
+    Blockly.svgResize(builderWorkspace);
+    validateBuilderBlocks();
+    drawBuilderMiniMap();
+    updateBuilderEmptyState();
+    mountBuilderFlyoutToHost();
+  });
+}
+
+function loadBuilderStrategyBundle(bundle) {
+  if (!bundle) return false;
+  const xml = bundle.blockly_xml || bundle.workspace_xml;
+  if (xml) {
+    loadBuilderXml(xml);
+    return true;
+  }
+  if (bundle.strategy && typeof loadStrategyIntoWorkspace === "function") {
+    loadStrategyIntoWorkspace(bundle.strategy);
+    window.requestAnimationFrame(() => {
+      validateBuilderBlocks();
+      drawBuilderMiniMap();
+      updateBuilderEmptyState();
+    });
+    return true;
+  }
+  return false;
+}
+
+function getBuilderWorkspaceMeta() {
+  const strategy =
+    typeof extractStrategyFromWorkspace === "function" ? extractStrategyFromWorkspace() : null;
+  let stake = 1;
+  let contractType = "DIGITUNDER";
+  if (builderWorkspace) {
+    builderWorkspace.getAllBlocks(false).forEach((block) => {
+      if (block.type === "stake_config") {
+        const raw = Number(block.getFieldValue("STAKE"));
+        if (Number.isFinite(raw) && raw > 0) stake = raw;
+      }
+    });
+  }
+  const rules = strategy?.actions?.over_under?.rules || {};
+  contractType = String(rules.trade || "UNDER").toUpperCase() === "OVER" ? "DIGITOVER" : "DIGITUNDER";
+  const meta = strategy?.quick_meta || {};
+  const market = meta.market || "R_100";
+  const name =
+    meta.strategy_label ||
+    (contractType === "DIGITOVER" ? "Digit Over Strategy" : "Digit Under Strategy");
+  let riskLevel = "Medium";
+  if (stake >= 1.2) riskLevel = "High";
+  else if (stake < 0.9) riskLevel = "Low";
+  return {
+    name,
+    market,
+    contract_type: meta.contract_type || contractType,
+    stake,
+    risk_level: riskLevel,
+    strategy,
+    blockly_xml: exportBuilderWorkspaceXml(),
+  };
+}
+
+function exportBuilderStrategyJson(extraMeta = {}) {
+  const meta = getBuilderWorkspaceMeta();
+  return {
+    format: "derivbot-builder-strategy",
+    version: 1,
+    exported_at: new Date().toISOString(),
+    name: extraMeta.name || meta.name,
+    market: extraMeta.market || meta.market,
+    contract_type: extraMeta.contract_type || meta.contract_type,
+    stake: extraMeta.stake ?? meta.stake,
+    risk_level: extraMeta.risk_level || meta.risk_level,
+    strategy: meta.strategy,
+    blockly_xml: meta.blockly_xml,
+    ...extraMeta,
+  };
 }
 
 function clearBuilderWorkspace() {
@@ -506,11 +694,13 @@ function filterBuilderToolbox(query = "") {
     return;
   }
   const aliases = {
-    analysis_logics: ["analysis", "logic", "trend", "rsi"],
-    trade_parameters: ["stake", "threshold", "profit"],
-    purchase_conditions: ["repeat", "digit"],
-    sell_conditions: ["loss", "profit"],
-    restart_conditions: ["restart"],
+    analysis_logics: ["analysis logics", "analysis", "logic", "trend", "rsi"],
+    trade_parameters: ["trade parameters", "stake", "threshold", "profit"],
+    purchase_conditions: ["purchase conditions", "repeat", "digit"],
+    sell_conditions: ["sell conditions", "loss", "profit"],
+    restart_conditions: ["restart conditions", "restart"],
+    utility: ["utility", "logic_gate"],
+    contract_modifiers: ["contract modifiers", "stake_config"],
     analysis: ["buy", "over", "under"],
   };
   const terms = aliases[q] || [q];
@@ -528,6 +718,7 @@ function filterBuilderToolbox(query = "") {
       .filter((cat) => (cat.contents || []).length > 0),
   };
   builderWorkspace.updateToolbox(filtered);
+  window.requestAnimationFrame(mountBuilderFlyoutToHost);
 }
 
 function resetBuilderWorkspaceToDefault() {

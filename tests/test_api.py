@@ -38,6 +38,7 @@ def test_pages_return_html(client):
         "/manual-trader",
         "/matches",
         "/strategies",
+        "/trading-bots",
     ):
         response = client.get(path)
         assert response.status_code == 200
@@ -120,6 +121,21 @@ def test_copy_flow(client):
     assert unf.status_code == 200
 
 
+def test_strategy_presets_api(client):
+    listed = client.get("/strategy-presets")
+    assert listed.status_code == 200
+    ids = {p["id"] for p in listed.json().get("presets", [])}
+    assert "balanced" in ids
+
+    applied = client.post("/strategy-preset", json={"preset": "sniper"})
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body.get("profile") == "sniper"
+    loaded = client.get("/load-strategy")
+    assert loaded.json().get("profile") == "sniper"
+    assert loaded.json()["search"]["min_estimated_ratio"] >= 2.5
+
+
 def test_save_load_strategy(client):
     strat = {
         "type": "digit_strategy",
@@ -136,6 +152,30 @@ def test_save_load_strategy(client):
     loaded = client.get("/load-strategy")
     assert loaded.status_code == 200
     assert loaded.json()["rules"]["if_digit_greater_equal"] == 6
+
+
+def test_strategy_runtime_and_risk_endpoints(client):
+    runtime = client.get("/strategy/runtime")
+    assert runtime.status_code == 200
+    body = runtime.json()
+    assert body.get("success") is True
+    assert "active_action" in body
+    assert "compatibility" in body
+
+    decisions = client.get("/strategy/signal-decisions")
+    assert decisions.status_code == 200
+    assert decisions.json().get("success") is True
+    assert isinstance(decisions.json().get("decisions"), list)
+
+    risk = client.post(
+        "/strategy-risk",
+        json={"max_consecutive_losses": 3, "research_mode": False, "cooldown_ticks": 12},
+    )
+    assert risk.status_code == 200
+    rb = risk.json()
+    assert rb.get("success") is True
+    assert rb["risk"]["max_consecutive_losses"] == 3
+    assert rb["cooldown"]["cooldown_ticks"] == 12
 
 
 def test_manual_trade_bad_contract(client, monkeypatch):

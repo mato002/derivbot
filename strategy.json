@@ -7,7 +7,7 @@
     "over_under": {
       "enabled": true,
       "rules": {
-        "if_digit_greater_equal": 6,
+        "if_digit_greater_equal": 5,
         "trade": "UNDER",
         "else_trade": "OVER"
       }
@@ -22,12 +22,50 @@
     }
   },
   "rules": {
-    "if_digit_greater_equal": 6,
+    "if_digit_greater_equal": 5,
     "trade": "UNDER",
     "else_trade": "OVER"
   },
+  "model": {
+    "use_probability_gate": false,
+    "min_win_probability": 0.6,
+    "min_samples": 120
+  },
+  "portfolio": {
+    "enabled": true,
+    "regime_action_map": {
+      "volatile": "rise_fall",
+      "range": "over_under",
+      "mixed": "over_under"
+    }
+  },
+  "execution": {
+    "min_payout_to_stake": 1.75,
+    "max_proposal_latency_ms": 1500,
+    "enforce_on_manual": false
+  },
+  "search": {
+    "enabled": true,
+    "barrier_policy": "signal",
+    "min_estimated_ratio": 1.75,
+    "avoid_extreme_barriers": true,
+    "min_barrier_over": 0,
+    "max_barrier_under": 8,
+    "adaptive_ratio": false,
+    "adaptive_ratio_tiers": [
+      {
+        "min_confidence": 0.9,
+        "min_ratio": 1.15
+      },
+      {
+        "min_confidence": 0.75,
+        "min_ratio": 1.4
+      }
+    ]
+  },
   "confluence": {
     "enabled": true,
+    "enforce_confluence": true,
     "min_score": 5,
     "min_confirmations": 2,
     "use_trend": true,
@@ -39,5 +77,20 @@
     "sr_lookback": 90,
     "sr_tolerance_pct": 0.22,
     "history_ticks": 900
-  }
+  },
+  "cooldown": {
+    "cooldown_ticks": 10,
+    "min_ticks_between_trades": 10
+  },
+  "risk": {
+    "max_consecutive_losses": 2,
+    "max_session_drawdown_pct": 10.0,
+    "max_trades_per_session": 50,
+    "loss_cluster_window": 8,
+    "loss_cluster_limit": 6,
+    "volatility_lockout_enabled": true,
+    "volatility_lockout_regime": "volatile"
+  },
+  "profile": "",
+  "research_mode": false
 }

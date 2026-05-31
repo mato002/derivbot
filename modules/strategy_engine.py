@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +13,7 @@ STRATEGY_PATH = Path(__file__).resolve().parent.parent / "strategy.json"
 
 DEFAULT_CONFLUENCE: Dict[str, Any] = {
     "enabled": True,
-    # When false, confluence is advisory only (Over/Under base signal still trades).
-    "enforce_confluence": False,
+    "enforce_confluence": True,
     "min_score": 5,
     "min_confirmations": 2,
     "use_trend": True,
@@ -52,7 +51,9 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
         "rise_fall": {"enabled": False, "rules": dict(DEFAULT_ACTION_RULES["rise_fall"])},
     },
     "model": {
-        "min_win_probability": 0.53,
+        "use_probability_gate": False,
+        "min_win_probability": 0.60,
+        "min_samples": 120,
     },
     "portfolio": {
         "enabled": True,
@@ -63,11 +64,129 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
         },
     },
     "execution": {
-        "min_payout_to_stake": 1.75,
+        "min_payout_to_stake": 2.2,
         "max_proposal_latency_ms": 1500,
+    },
+    "cooldown": {
+        "cooldown_ticks": 10,
+        "min_ticks_between_trades": 10,
+    },
+    "risk": {
+        "max_consecutive_losses": 2,
+        "max_session_drawdown_pct": 10.0,
+        "max_trades_per_session": 50,
+        "loss_cluster_window": 8,
+        "loss_cluster_limit": 6,
+        "volatility_lockout_enabled": True,
+        "volatility_lockout_regime": "volatile",
+    },
+    "research_mode": False,
+    "search": {
+        "enabled": True,
+        "barrier_policy": "signal",
+        "min_estimated_ratio": 1.75,
+        "avoid_extreme_barriers": True,
+        "min_barrier_over": 0,
+        "max_barrier_under": 8,
+        "adaptive_ratio": False,
+        "adaptive_ratio_tiers": [
+            {"min_confidence": 0.90, "min_ratio": 1.15},
+            {"min_confidence": 0.75, "min_ratio": 1.40},
+        ],
     },
     "confluence": dict(DEFAULT_CONFLUENCE),
 }
+
+# One-click risk profiles: merges search + execution (strategy rules unchanged).
+STRATEGY_PRESETS: Dict[str, Dict[str, Any]] = {
+    "scalp_safe": {
+        "label": "Scalp (safe)",
+        "description": "Higher frequency, smaller edge; adaptive ratio for very confident signals.",
+        "execution": {
+            "min_payout_to_stake": 1.12,
+            "max_proposal_latency_ms": 1200,
+        },
+        "search": {
+            "enabled": True,
+            "barrier_policy": "efficiency",
+            "min_estimated_ratio": 1.12,
+            "avoid_extreme_barriers": True,
+            "min_barrier_over": 2,
+            "max_barrier_under": 7,
+            "adaptive_ratio": True,
+            "adaptive_ratio_tiers": [
+                {"min_confidence": 0.90, "min_ratio": 1.10},
+                {"min_confidence": 0.80, "min_ratio": 1.20},
+            ],
+        },
+    },
+    "balanced": {
+        "label": "Balanced",
+        "description": "Default professional profile: mid barriers, ~1.75× minimum reward.",
+    "execution": {
+        "min_payout_to_stake": 1.75,
+        "max_proposal_latency_ms": 1500,
+        "enforce_on_manual": False,
+    },
+        "search": {
+            "enabled": True,
+            "barrier_policy": "efficiency",
+            "min_estimated_ratio": 1.75,
+            "avoid_extreme_barriers": True,
+            "min_barrier_over": 4,
+            "max_barrier_under": 5,
+            "adaptive_ratio": False,
+            "adaptive_ratio_tiers": [
+                {"min_confidence": 0.90, "min_ratio": 1.15},
+                {"min_confidence": 0.75, "min_ratio": 1.40},
+            ],
+        },
+    },
+    "sniper": {
+        "label": "Sniper",
+        "description": "Fewer trades, high payout ratio target; extreme barriers only.",
+        "execution": {
+            "min_payout_to_stake": 2.50,
+            "max_proposal_latency_ms": 2000,
+        },
+        "search": {
+            "enabled": True,
+            "barrier_policy": "efficiency",
+            "min_estimated_ratio": 2.50,
+            "avoid_extreme_barriers": True,
+            "min_barrier_over": 6,
+            "max_barrier_under": 4,
+            "adaptive_ratio": False,
+            "adaptive_ratio_tiers": [
+                {"min_confidence": 0.90, "min_ratio": 2.00},
+                {"min_confidence": 0.75, "min_ratio": 2.30},
+            ],
+        },
+    },
+}
+
+
+def list_strategy_presets() -> list[Dict[str, str]]:
+    return [
+        {
+            "id": key,
+            "label": str(meta.get("label", key)),
+            "description": str(meta.get("description", "")),
+        }
+        for key, meta in STRATEGY_PRESETS.items()
+    ]
+
+
+def apply_strategy_preset(strategy: Dict[str, Any], preset_id: str) -> Dict[str, Any]:
+    pid = str(preset_id or "").strip().lower()
+    if pid not in STRATEGY_PRESETS:
+        raise ValueError(f"Unknown preset: {preset_id}")
+    preset = STRATEGY_PRESETS[pid]
+    merged = dict(strategy)
+    merged["profile"] = pid
+    merged["execution"] = {**(merged.get("execution") or {}), **dict(preset.get("execution") or {})}
+    merged["search"] = {**(merged.get("search") or {}), **dict(preset.get("search") or {})}
+    return validate_strategy(merged)
 
 
 def validate_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
@@ -140,7 +259,17 @@ def validate_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
                     conf[k] = float(v)
                 else:
                     conf[k] = v
-    return {
+
+    raw_model = strategy.get("model") if isinstance(strategy.get("model"), dict) else {}
+    prob_gate = bool(raw_model.get("use_probability_gate", DEFAULT_STRATEGY["model"]["use_probability_gate"]))
+    min_wp_raw = raw_model.get("min_win_probability", None)
+    if min_wp_raw is None:
+        min_wp = float(DEFAULT_STRATEGY["model"]["min_win_probability"])
+    else:
+        min_wp = max(0.0, min(0.95, float(min_wp_raw)))
+    min_samples = int(raw_model.get("min_samples", DEFAULT_STRATEGY["model"].get("min_samples", 120)))
+    min_samples = max(50, min(2000, min_samples))
+    validated: Dict[str, Any] = {
         "type": "digit_strategy",
         "condition": "repeat_3",
         "action": active_action,
@@ -149,9 +278,9 @@ def validate_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
         # Backward compatibility for existing UI/consumers expecting top-level rules.
         "rules": dict(actions[active_action]["rules"]),
         "model": {
-            "min_win_probability": max(
-                0.5, min(0.75, float((strategy.get("model") or {}).get("min_win_probability", 0.53)))
-            )
+            "use_probability_gate": prob_gate,
+            "min_win_probability": min_wp,
+            "min_samples": min_samples,
         },
         "portfolio": {
             "enabled": bool((strategy.get("portfolio") or {}).get("enabled", True)),
@@ -174,8 +303,141 @@ def validate_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
             "max_proposal_latency_ms": max(
                 50, min(5000, int((strategy.get("execution") or {}).get("max_proposal_latency_ms", 1500)))
             ),
+            "enforce_on_manual": bool((strategy.get("execution") or {}).get("enforce_on_manual", False)),
         },
+        "search": _validate_search(strategy.get("search") if isinstance(strategy.get("search"), dict) else {}),
         "confluence": conf,
+        "cooldown": _validate_cooldown(strategy.get("cooldown") if isinstance(strategy.get("cooldown"), dict) else {}),
+        "risk": _validate_risk(strategy.get("risk") if isinstance(strategy.get("risk"), dict) else {}),
+        "profile": _validate_profile(strategy.get("profile")),
+        "research_mode": bool(strategy.get("research_mode", DEFAULT_STRATEGY.get("research_mode", False))),
+    }
+    validated["search"] = align_search_with_signal_rules(
+        validated["search"],
+        validated["actions"]["over_under"]["rules"],
+    )
+    return validated
+
+
+def _validate_profile(raw: Any) -> str:
+    pid = str(raw or "").strip().lower()
+    return pid if pid in STRATEGY_PRESETS else ""
+
+
+def _validate_cooldown(raw: Dict[str, Any]) -> Dict[str, Any]:
+    defaults = dict(DEFAULT_STRATEGY["cooldown"])
+    ticks = int(raw.get("cooldown_ticks", raw.get("min_ticks_between_trades", defaults["cooldown_ticks"])))
+    ticks = max(0, min(500, ticks))
+    return {"cooldown_ticks": ticks, "min_ticks_between_trades": ticks}
+
+
+def _validate_risk(raw: Dict[str, Any]) -> Dict[str, Any]:
+    defaults = dict(DEFAULT_STRATEGY["risk"])
+    src = raw if isinstance(raw, dict) else {}
+    return {
+        "max_consecutive_losses": max(1, min(20, int(src.get("max_consecutive_losses", defaults["max_consecutive_losses"])))),
+        "max_session_drawdown_pct": max(
+            1.0, min(100.0, float(src.get("max_session_drawdown_pct", defaults["max_session_drawdown_pct"])))
+        ),
+        "max_trades_per_session": max(1, min(500, int(src.get("max_trades_per_session", defaults["max_trades_per_session"])))),
+        "loss_cluster_window": max(3, min(50, int(src.get("loss_cluster_window", defaults["loss_cluster_window"])))),
+        "loss_cluster_limit": max(2, min(50, int(src.get("loss_cluster_limit", defaults["loss_cluster_limit"])))),
+        "volatility_lockout_enabled": bool(src.get("volatility_lockout_enabled", defaults["volatility_lockout_enabled"])),
+        "volatility_lockout_regime": str(src.get("volatility_lockout_regime", defaults["volatility_lockout_regime"])),
+    }
+
+
+def align_search_with_signal_rules(
+    search: Dict[str, Any],
+    over_under_rules: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Ensure search-layer barrier bounds do not block signal-engine output.
+    Signal: digits < threshold → OVER @ repeated_digit; digits >= threshold → UNDER @ repeated_digit.
+    """
+    threshold = int(over_under_rules.get("if_digit_greater_equal", 5))
+    threshold = min(max(threshold, 0), 9)
+    out = dict(search)
+    if not bool(out.get("avoid_extreme_barriers", True)):
+        return out
+    # OVER signals use barriers 0 .. threshold-1
+    out["min_barrier_over"] = 0
+    # UNDER signals use barriers threshold .. 8 (9 clamps to 8 on Deriv)
+    out["max_barrier_under"] = 8
+    if threshold <= 0:
+        out["max_barrier_under"] = 8
+    return out
+
+
+def search_signal_compatibility(strategy: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return per-digit signal paths and whether search filters would block them."""
+    from modules import payout_search, signal_engine
+
+    issues: List[Dict[str, Any]] = []
+    rules = ((strategy.get("actions") or {}).get("over_under") or {}).get("rules") or strategy.get("rules") or {}
+    search = dict(strategy.get("search") or {})
+    for rep in range(10):
+        sig = signal_engine.build_signal(
+            strategy=strategy,
+            signal_digits=[rep, rep, rep],
+            repeated_digit=rep,
+            regime="mixed",
+        )
+        if not sig or sig.active_action != "over_under":
+            continue
+        dec = {"contract_type": sig.contract_type, "barrier": sig.barrier, "side": sig.side}
+        refined, skip = payout_search.refine_digit_decision(
+            dec,
+            strategy=strategy,
+            repeated_digit=rep,
+            transition_probs=None,
+            confidence=0.5,
+        )
+        issues.append(
+            {
+                "repeated_digit": rep,
+                "side": sig.side,
+                "barrier": sig.barrier,
+                "reachable": refined is not None,
+                "block_reason": skip or "",
+            }
+        )
+    return issues
+
+
+def _validate_search(raw: Dict[str, Any]) -> Dict[str, Any]:
+    defaults = dict(DEFAULT_STRATEGY["search"])
+    src = raw if isinstance(raw, dict) else {}
+    policy = str(src.get("barrier_policy", defaults["barrier_policy"])).strip().lower()
+    if policy in {"efficient", "adaptive"}:
+        policy = "efficiency"
+    if policy not in {"signal", "efficiency"}:
+        policy = "signal"
+    tiers_in = src.get("adaptive_ratio_tiers")
+    tiers: list[Dict[str, Any]] = []
+    if isinstance(tiers_in, list):
+        for t in tiers_in:
+            if not isinstance(t, dict):
+                continue
+            tiers.append(
+                {
+                    "min_confidence": max(0.0, min(1.0, float(t.get("min_confidence", 0)))),
+                    "min_ratio": max(1.01, min(10.0, float(t.get("min_ratio", 1.75)))),
+                }
+            )
+    if not tiers:
+        tiers = [dict(x) for x in defaults["adaptive_ratio_tiers"]]
+    return {
+        "enabled": bool(src.get("enabled", defaults["enabled"])),
+        "barrier_policy": policy,
+        "min_estimated_ratio": max(
+            1.01, min(10.0, float(src.get("min_estimated_ratio", defaults["min_estimated_ratio"])))
+        ),
+        "avoid_extreme_barriers": bool(src.get("avoid_extreme_barriers", defaults["avoid_extreme_barriers"])),
+        "min_barrier_over": max(0, min(8, int(src.get("min_barrier_over", defaults["min_barrier_over"])))),
+        "max_barrier_under": max(0, min(8, int(src.get("max_barrier_under", defaults["max_barrier_under"])))),
+        "adaptive_ratio": bool(src.get("adaptive_ratio", defaults["adaptive_ratio"])),
+        "adaptive_ratio_tiers": tiers,
     }
 
 

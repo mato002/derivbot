@@ -1,91 +1,193 @@
 {% extends "base.html" %}
 {% set active_nav = 'analysis' %}
-{% block title %}Analysis — Deriv Platform{% endblock %}
+{% block body_class %}analysis-v2-page{% endblock %}
+{% block title %}Analysis Tool — Deriv Platform{% endblock %}
 {% block extra_head %}
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 {% endblock %}
 {% block content %}
-    <div class="page-inner">
-      <header class="topbar card">
-        <div>
-          <h1>Charts / Analysis</h1>
-          <p class="subtle">Live series from Deriv ticks + RSI(14) + MA(20)</p>
+    <div class="page-inner page-inner--analysis-v2">
+      <header class="analysis-v2-header card" aria-label="Market status">
+        <div class="analysis-advisory-banner" role="note">
+          <strong>Advisory mode.</strong> Scores here use a client-side engine for exploration.
+          Production confluence that gates live trades is configured in
+          <a href="/strategies">Runtime Policy Center</a>.
         </div>
-        <div class="auth-panel">
+        <div class="analysis-v2-header__field">
+          <span class="analysis-v2-header__label">Market</span>
+          <strong id="analysisV2Market" class="analysis-v2-header__value">Volatility 100 Index</strong>
+        </div>
+        <div class="analysis-v2-header__field">
+          <span class="analysis-v2-header__label">Account</span>
+          <strong id="analysisV2Account" class="analysis-v2-header__value">Not logged in</strong>
+        </div>
+        <div class="analysis-v2-header__field">
+          <span class="analysis-v2-header__label">Connection</span>
+          <span id="analysisV2Connection" class="analysis-v2-pill analysis-v2-pill--offline">Connecting</span>
+        </div>
+        <div class="analysis-v2-header__field analysis-v2-header__field--price" aria-live="polite">
+          <span class="analysis-v2-header__label">Last Price</span>
+          <strong id="analysisV2LastPrice" class="analysis-v2-header__value analysis-v2-header__value--price">--</strong>
+        </div>
+        <div class="analysis-v2-header__auth" aria-hidden="true">
           <span id="authAccount" class="subtle">Not logged in</span>
-          <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
+          <a id="loginDerivBtn" class="btn btn-blue hidden" href="/auth/deriv/login">Login</a>
           <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
         </div>
       </header>
-      <div class="section-tabs">
-        <button type="button">Summary</button>
-        <button type="button">Transactions</button>
-        <button type="button">Journal</button>
-        <button type="button">Signals</button>
+
+      <div class="analysis-v2-summary" aria-label="Analysis summary">
+        <article class="analysis-v2-card">
+          <span class="analysis-v2-card__label">Trend</span>
+          <strong id="analysisCardTrend" class="analysis-v2-card__value">—</strong>
+        </article>
+        <article class="analysis-v2-card">
+          <span class="analysis-v2-card__label">Momentum</span>
+          <strong id="analysisCardMomentum" class="analysis-v2-card__value">—</strong>
+        </article>
+        <article class="analysis-v2-card">
+          <span class="analysis-v2-card__label">Volatility</span>
+          <strong id="analysisCardVolatility" class="analysis-v2-card__value">—</strong>
+        </article>
+        <article class="analysis-v2-card">
+          <span class="analysis-v2-card__label">Signal</span>
+          <strong id="analysisCardSignal" class="analysis-v2-card__value analysis-v2-card__value--signal">HOLD</strong>
+        </article>
+        <article class="analysis-v2-card">
+          <span class="analysis-v2-card__label">Confidence</span>
+          <strong id="analysisCardConfidence" class="analysis-v2-card__value">—</strong>
+        </article>
       </div>
 
-      <section class="card">
-        <div class="toolbar">
-          <div class="analysis-market-control">
-            <div class="subtle small">Symbol</div>
-            <button id="analysisMarketPickerToggle" type="button" class="market-picker-toggle">Markets</button>
-            <strong id="analysisCurrentSymbol">Volatility 100 Index</strong>
-            <button id="analysisMarketPickerClose" type="button" class="market-picker-close hidden" aria-label="Close markets">✕</button>
-            <select id="analysisSymbol" class="hidden"></select>
-            <div id="analysisMarketPickerOverlay" class="market-picker-overlay hidden">
-              <div id="analysisMarketPickerCategories" class="market-picker-left"></div>
-              <div class="market-picker-right">
-                <div class="market-picker-search">
-                  <input id="analysisMarketSearchInput" type="search" placeholder="Search..." />
+      <div class="analysis-v2-workspace">
+        <section class="analysis-v2-main card" aria-label="Chart">
+          <div class="analysis-v2-toolbar">
+            <div class="analysis-market-control">
+              <button id="analysisMarketPickerToggle" type="button" class="market-picker-toggle">Markets</button>
+              <strong id="analysisCurrentSymbol">Volatility 100 Index</strong>
+              <button id="analysisMarketPickerClose" type="button" class="market-picker-close hidden" aria-label="Close markets">✕</button>
+              <select id="analysisSymbol" class="hidden"></select>
+              <div id="analysisMarketPickerOverlay" class="market-picker-overlay hidden">
+                <div id="analysisMarketPickerCategories" class="market-picker-left"></div>
+                <div class="market-picker-right">
+                  <div class="market-picker-search">
+                    <input id="analysisMarketSearchInput" type="search" placeholder="Search..." />
+                  </div>
+                  <div id="analysisMarketPickerList" class="market-picker-list"></div>
                 </div>
-                <div id="analysisMarketPickerList" class="market-picker-list"></div>
               </div>
             </div>
+            <label class="analysis-v2-tf">
+              Timeframe
+              <select id="analysisTimeframe">
+                <option value="tick">Tick</option>
+                <option value="1s">1s</option>
+                <option value="5s">5s</option>
+                <option value="1m">1m</option>
+                <option value="5m">5m</option>
+              </select>
+            </label>
+            <div class="analysis-v2-live-stats" id="analysisStats" aria-live="polite"></div>
           </div>
-          <label>
-            Timeframe
-            <select id="analysisTimeframe">
-              <option value="tick">Tick</option>
-              <option value="1s">1s</option>
-              <option value="5s">5s</option>
-              <option value="1m">1m</option>
-              <option value="5m">5m</option>
-            </select>
-          </label>
-        </div>
-        <div class="analysis-layout">
-          <div class="analysis-center">
-            <div class="analysis-stats" id="analysisStats"></div>
-            <div id="priceChart" class="tv-chart analysis-main-chart"></div>
-            <div id="rsiChart" class="tv-chart tv-chart-small analysis-rsi-chart"></div>
+          <div class="analysis-v2-chart-stack">
+            <div id="priceChart" class="tv-chart analysis-main-chart analysis-v2-price-chart"></div>
+            <div id="rsiChart" class="tv-chart tv-chart-small analysis-rsi-chart analysis-v2-rsi-chart"></div>
           </div>
-          <aside class="analysis-side card">
-            <h3>Last Signal</h3>
-            <div class="analysis-signal-grid">
-              <div class="subtle">Signal</div>
-              <div id="signalValue">-</div>
-              <div class="subtle">Reason</div>
-              <div id="signalReason">-</div>
-              <div class="subtle">Trend</div>
-              <div id="signalTrend">-</div>
-              <div class="subtle">Stream</div>
-              <div id="signalStream">Connecting...</div>
-            </div>
-            <hr />
-            <h3>Indicators</h3>
-            <div class="analysis-signal-grid">
-              <div class="subtle">Digit analysis</div><div id="digitAnalysisPanel">Monitoring ticks</div>
-              <div class="subtle">Volatility</div><div id="volatilityAnalysisPanel">Adaptive</div>
-              <div class="subtle">Timeframe</div><div id="timeframeView">tick</div>
-            </div>
-          </aside>
-        </div>
-      </section>
+        </section>
+
+        <aside class="analysis-v2-rail" aria-label="Recommendations">
+          <div class="analysis-v2-rail__sticky">
+            <section class="card analysis-v2-panel analysis-v2-panel--confluence">
+              <div class="analysis-v2-panel__head">
+                <h3>Confluence Engine</h3>
+                <span class="subtle small">0–100</span>
+              </div>
+              <div class="analysis-v2-score-ring" aria-hidden="true">
+                <svg viewBox="0 0 120 120" class="analysis-v2-score-ring__svg">
+                  <circle cx="60" cy="60" r="52" class="analysis-v2-score-ring__track"></circle>
+                  <circle cx="60" cy="60" r="52" class="analysis-v2-score-ring__fill" id="analysisConfluenceRing"></circle>
+                </svg>
+                <strong id="analysisConfluenceScore" class="analysis-v2-score-ring__value">0</strong>
+              </div>
+              <ul id="analysisConfluenceBreakdown" class="analysis-v2-module-list"></ul>
+            </section>
+
+            <section class="card analysis-v2-panel analysis-v2-panel--rec" id="analysisRecommendationPanel">
+              <div class="analysis-v2-panel__head">
+                <h3>Recommendation</h3>
+              </div>
+              <div id="analysisRecommendation" class="analysis-v2-rec analysis-v2-rec--hold">HOLD</div>
+              <div class="analysis-v2-rec-meta">
+                <span class="subtle">Confidence</span>
+                <strong id="analysisRecommendationConfidence">—</strong>
+              </div>
+            </section>
+
+            <section class="card analysis-v2-panel analysis-v2-panel--ai">
+              <div class="analysis-v2-panel__head">
+                <h3>AI Insight</h3>
+              </div>
+              <pre id="analysisAiInsight" class="analysis-v2-insight">Collecting market data…</pre>
+            </section>
+          </div>
+        </aside>
+      </div>
+
+      <div class="analysis-v2-bottom">
+        <section class="card analysis-v2-panel analysis-v2-scanner" aria-label="Market scanner">
+          <div class="analysis-v2-panel__head">
+            <h3>Market Scanner</h3>
+            <button type="button" id="analysisScannerRefresh" class="btn btn-blue btn-sm">Scan</button>
+          </div>
+          <p class="subtle small analysis-v2-scanner__hint">R_10 · R_25 · R_50 · R_75 · R_100 — ranked by opportunity</p>
+          <div class="analysis-v2-table-wrap">
+            <table class="analysis-v2-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Last</th>
+                  <th>Trend</th>
+                  <th>Signal</th>
+                  <th>Conf.</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="analysisScannerBody">
+                <tr><td colspan="6" class="subtle">Run scan to load opportunities</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card analysis-v2-panel analysis-v2-history" aria-label="Signal history">
+          <div class="analysis-v2-panel__head">
+            <h3>Signal History</h3>
+            <span id="analysisHistoryCount" class="subtle small">0 entries</span>
+          </div>
+          <div class="analysis-v2-table-wrap">
+            <table class="analysis-v2-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Signal</th>
+                  <th>Conf.</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="analysisSignalHistoryBody">
+                <tr><td colspan="4" class="subtle">Signals appear when confluence shifts</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
 {% endblock %}
 {% block extra_scripts %}
     <script src="/static/candles.js"></script>
     <script src="/static/indicators.js"></script>
+    <script src="/static/analysis_engine.js"></script>
+    <script src="/static/analysis_scanner.js"></script>
     <script src="/static/websocket.js"></script>
     <script src="/static/chart.js"></script>
     <script src="/static/ui.js"></script>

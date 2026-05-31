@@ -1,49 +1,214 @@
 {% extends "base.html" %}
 {% set active_nav = 'bots' %}
-{% block title %}Trading Bots — Deriv Platform{% endblock %}
+{% block body_class %}bots-page bots-registry-page{% endblock %}
+{% block title %}Trading Bots — Bot Registry & Deployment{% endblock %}
 {% block content %}
-    <div class="page-inner page-inner--dash">
-      <header class="topbar card card--hero">
-        <div class="topbar__head">
-          <div class="topbar__titles">
-            <h1>Trading Bots</h1>
-            <p class="subtle">Bot catalog, runtime orchestration, and deployment workspace.</p>
+    <div class="page-inner page-inner--bots-registry">
+      <header class="bots-hero">
+        <div class="bots-hero__text">
+          <h1 class="bots-hero__title">Bot Registry & Deployment Center</h1>
+          <p class="bots-hero__sub">Manage saved strategies, deploy to live accounts, and monitor performance.</p>
+        </div>
+        <div class="bots-hero__actions">
+          <a href="/builder" class="btn btn-blue">Open Bot Builder</a>
+        </div>
+        <div class="bots-kpis" aria-label="Registry statistics">
+          <div class="bots-kpi">
+            <span class="bots-label">My Bots</span>
+            <strong id="botsKpiTotal" class="bots-kpi__value">0</strong>
           </div>
-          <div class="topbar__auth-btns">
-            <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
-            <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+          <div class="bots-kpi">
+            <span class="bots-label">Active Deployments</span>
+            <strong id="botsKpiActive" class="bots-kpi__value">0</strong>
+          </div>
+          <div class="bots-kpi">
+            <span class="bots-label">Total Profit</span>
+            <strong id="botsKpiProfit" class="bots-kpi__value bots-pos">$0.00</strong>
+          </div>
+          <div class="bots-kpi">
+            <span class="bots-label">Win Rate</span>
+            <strong id="botsKpiWinRate" class="bots-kpi__value">—</strong>
           </div>
         </div>
       </header>
-      <div class="section-tabs">
-        <button type="button">Summary</button>
-        <button type="button">Transactions</button>
-        <button type="button">Journal</button>
-        <button type="button">Logs</button>
+
+      <nav class="bots-tabs" role="tablist" aria-label="Bot registry views">
+        <button type="button" class="bots-tab is-active" data-bots-view="marketplace" role="tab">Marketplace</button>
+        <button type="button" class="bots-tab" data-bots-view="mybots" role="tab">My Bots</button>
+        <button type="button" class="bots-tab" data-bots-view="deployments" role="tab">Deployments</button>
+        <button type="button" class="bots-tab" data-bots-view="analytics" role="tab">Analytics</button>
+      </nav>
+
+      <!-- Marketplace -->
+      <div id="botsViewMarketplace" class="bots-view is-active" role="tabpanel">
+        <div class="bots-toolbar">
+          <input id="botsMarketSearch" type="search" class="bots-search" placeholder="Search templates…" aria-label="Search marketplace" />
+        </div>
+        <div class="bots-categories" role="group" aria-label="Template categories">
+          <button type="button" class="bots-cat is-active" data-bots-cat="all">All</button>
+          <button type="button" class="bots-cat" data-bots-cat="over_under">Over/Under</button>
+          <button type="button" class="bots-cat" data-bots-cat="matches">Matches/Differs</button>
+          <button type="button" class="bots-cat" data-bots-cat="rise_fall">Rise/Fall</button>
+          <button type="button" class="bots-cat" data-bots-cat="even_odd">Even/Odd</button>
+          <button type="button" class="bots-cat" data-bots-cat="volatility">Volatility</button>
+          <button type="button" class="bots-cat" data-bots-cat="ai">AI Bots</button>
+        </div>
+        <div id="botsMarketGrid" class="bots-card-grid" aria-live="polite"></div>
       </div>
-      <div class="terminal-grid-3">
-        <section class="trading-panel">
-          <h3>Bot Templates</h3>
-          <ul class="quick-strategy-list">
-            <li>Over/Under Scalp</li>
-            <li>Rise/Fall Momentum</li>
-            <li>Matches Engine</li>
-            <li>Confluence Swing</li>
-          </ul>
-        </section>
-        <section class="trading-panel">
-          <h3>Deployment Workspace</h3>
-          <p class="subtle small">Premium bot deployment UI placeholder. Hook this panel to your next orchestration layer.</p>
-          <div class="live-row"><span>Selected bot</span><strong>Over/Under Scalp</strong></div>
-          <div class="live-row"><span>Environment</span><strong>Demo</strong></div>
-          <div class="live-row"><span>Max risk/session</span><strong>2%</strong></div>
-        </section>
-        <aside class="trading-panel">
-          <h3>Run Panel</h3>
-          <button id="tradingBotsRunBtn" class="btn btn-start" style="width:100%">Run</button>
-          <button id="tradingBotsStopBtn" class="btn btn-stop" style="width:100%;margin-top:8px;">Stop</button>
-          <p class="subtle small" style="margin-top:10px;">Status: <span id="tradingBotsRunStatus" class="status-pill status-pill--danger">Not running</span></p>
-        </aside>
+
+      <!-- My Bots -->
+      <div id="botsViewMybots" class="bots-view" role="tabpanel" hidden>
+        <div class="bots-toolbar">
+          <input id="botsMySearch" type="search" class="bots-search" placeholder="Search my bots…" aria-label="Search my bots" />
+          <select id="botsMySort" class="bots-select" aria-label="Sort bots">
+            <option value="updated">Last modified</option>
+            <option value="created">Created date</option>
+            <option value="name">Name</option>
+            <option value="version">Version</option>
+          </select>
+        </div>
+        <div id="botsMyEmpty" class="bots-empty hidden">
+          <div class="bots-empty__icon" aria-hidden="true">⬡</div>
+          <h2 class="bots-empty__title">No bots in your registry</h2>
+          <p class="bots-empty__text">Save a strategy from Bot Builder or clone a marketplace template to get started.</p>
+          <a href="/builder" class="btn btn-blue">Create in Bot Builder</a>
+        </div>
+        <div id="botsMyGrid" class="bots-card-grid"></div>
+      </div>
+
+      <!-- Deployments -->
+      <div id="botsViewDeployments" class="bots-view" role="tabpanel" hidden>
+        <div id="botsDeployEmpty" class="bots-empty hidden">
+          <div class="bots-empty__icon" aria-hidden="true">▶</div>
+          <h2 class="bots-empty__title">No active deployments</h2>
+          <p class="bots-empty__text">Deploy a bot from My Bots or the Marketplace to start automated trading.</p>
+          <button type="button" class="btn btn-blue" data-bots-goto="mybots">View My Bots</button>
+        </div>
+        <div id="botsDeployGrid" class="bots-deploy-grid"></div>
+      </div>
+
+      <!-- Analytics -->
+      <div id="botsViewAnalytics" class="bots-view" role="tabpanel" hidden>
+        <div class="bots-analytics-stats">
+          <div class="bots-analytics-stat">
+            <span class="bots-label">Session Profit</span>
+            <strong id="botsAnalyticsProfit" class="bots-analytics-stat__val">$0.00</strong>
+          </div>
+          <div class="bots-analytics-stat">
+            <span class="bots-label">Win Rate</span>
+            <strong id="botsAnalyticsWinRate" class="bots-analytics-stat__val">—</strong>
+          </div>
+          <div class="bots-analytics-stat">
+            <span class="bots-label">Total Trades</span>
+            <strong id="botsAnalyticsTrades" class="bots-analytics-stat__val">0</strong>
+          </div>
+          <div class="bots-analytics-stat">
+            <span class="bots-label">Deployments</span>
+            <strong id="botsAnalyticsDeploys" class="bots-analytics-stat__val">0</strong>
+          </div>
+        </div>
+        <div class="bots-charts-row">
+          <div class="bots-chart-card">
+            <header class="bots-chart-card__head"><h2 class="bots-chart-card__title">Equity Curve</h2></header>
+            <div id="botsChartEquity" class="bots-chart"></div>
+          </div>
+          <div class="bots-chart-card">
+            <header class="bots-chart-card__head"><h2 class="bots-chart-card__title">Win Rate</h2></header>
+            <div id="botsChartWinRate" class="bots-chart bots-chart--donut"></div>
+          </div>
+        </div>
+        <div class="bots-charts-row">
+          <div class="bots-chart-card">
+            <header class="bots-chart-card__head"><h2 class="bots-chart-card__title">Profit History</h2></header>
+            <div id="botsChartProfit" class="bots-chart"></div>
+          </div>
+          <div class="bots-chart-card">
+            <header class="bots-chart-card__head"><h2 class="bots-chart-card__title">Trades by Day</h2></header>
+            <div id="botsChartTradesDay" class="bots-chart bots-chart--bars"></div>
+          </div>
+        </div>
       </div>
     </div>
+
+    <!-- Bot Detail Modal -->
+    <div id="botsDetailModal" class="bots-modal hidden" role="dialog" aria-modal="true" aria-labelledby="botsDetailTitle">
+      <div class="bots-modal__backdrop" data-bots-close></div>
+      <div class="bots-modal__panel bots-modal__panel--wide">
+        <header class="bots-modal__head">
+          <div>
+            <h2 id="botsDetailTitle" class="bots-modal__title">Bot</h2>
+            <p id="botsDetailSub" class="bots-modal__sub"></p>
+          </div>
+          <button type="button" class="bots-modal__close" data-bots-close aria-label="Close">&times;</button>
+        </header>
+        <nav class="bots-detail-tabs" role="tablist">
+          <button type="button" class="bots-detail-tab is-active" data-bots-detail="overview">Overview</button>
+          <button type="button" class="bots-detail-tab" data-bots-detail="performance">Performance</button>
+          <button type="button" class="bots-detail-tab" data-bots-detail="deployments">Deployments</button>
+          <button type="button" class="bots-detail-tab" data-bots-detail="versions">Versions</button>
+          <button type="button" class="bots-detail-tab" data-bots-detail="logs">Logs</button>
+        </nav>
+        <div class="bots-modal__body">
+          <div id="botsDetailOverview" class="bots-detail-panel is-active"></div>
+          <div id="botsDetailPerformance" class="bots-detail-panel" hidden></div>
+          <div id="botsDetailDeployments" class="bots-detail-panel" hidden></div>
+          <div id="botsDetailVersions" class="bots-detail-panel" hidden></div>
+          <div id="botsDetailLogs" class="bots-detail-panel" hidden></div>
+        </div>
+        <footer class="bots-modal__foot">
+          <button type="button" class="btn" data-bots-close>Close</button>
+          <button type="button" id="botsDetailOpenBtn" class="btn">Open in Builder</button>
+          <button type="button" id="botsDetailDeployBtn" class="btn btn-teal">Deploy</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Deploy Modal -->
+    <div id="botsDeployModal" class="bots-modal hidden" role="dialog" aria-modal="true" aria-labelledby="botsDeployTitle">
+      <div class="bots-modal__backdrop" data-bots-close></div>
+      <div class="bots-modal__panel">
+        <header class="bots-modal__head">
+          <h2 id="botsDeployTitle" class="bots-modal__title">Deploy Bot</h2>
+          <button type="button" class="bots-modal__close" data-bots-close aria-label="Close">&times;</button>
+        </header>
+        <form id="botsDeployForm" class="bots-modal__body bots-deploy-form">
+          <p class="bots-deploy-trader"><span class="bots-label">Bot</span> <strong id="botsDeployBotName">—</strong></p>
+          <p class="subtle small">Version <span id="botsDeployVersion">—</span> · <span id="botsDeployMarket">—</span></p>
+          <label class="bots-field">
+            <span class="bots-label">Account</span>
+            <select id="botsDeployAccount">
+              <option value="demo">Demo</option>
+              <option value="real">Real</option>
+            </select>
+          </label>
+          <label class="bots-field">
+            <span class="bots-label"><input type="checkbox" id="botsDeployStart" checked /> Start immediately after deploy</span>
+          </label>
+        </form>
+        <footer class="bots-modal__foot">
+          <button type="button" class="btn" data-bots-close>Cancel</button>
+          <button type="submit" form="botsDeployForm" class="btn btn-teal">Deploy</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Template Preview Modal -->
+    <div id="botsPreviewModal" class="bots-modal hidden" role="dialog" aria-modal="true">
+      <div class="bots-modal__backdrop" data-bots-close></div>
+      <div class="bots-modal__panel">
+        <header class="bots-modal__head">
+          <h2 id="botsPreviewTitle" class="bots-modal__title">Template</h2>
+          <button type="button" class="bots-modal__close" data-bots-close aria-label="Close">&times;</button>
+        </header>
+        <div id="botsPreviewBody" class="bots-modal__body"></div>
+        <footer class="bots-modal__foot">
+          <button type="button" class="btn" data-bots-close>Close</button>
+          <button type="button" id="botsPreviewCloneBtn" class="btn">Clone to My Bots</button>
+          <button type="button" id="botsPreviewDeployBtn" class="btn btn-teal">Deploy</button>
+        </footer>
+      </div>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="/static/bots_registry.js?v=bots-v1-2"></script>
 {% endblock %}

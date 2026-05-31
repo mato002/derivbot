@@ -29,30 +29,46 @@ _PAT_LIST_FETCH_GUARD = Lock()
 # PAT OTP is expensive and rate-limited; cache ws URL per token+account.
 _PAT_OTP_CACHE: dict[str, tuple[float, str, str]] = {}
 _PAT_OTP_LOCK = Lock()
-_PAT_OTP_TTL_SEC = 120.0
+# OTP WebSocket URLs are single-use after a successful handshake. Reusing a cached URL
+# (e.g. diagnostics/market-data connects, then the bot) yields 401 Invalid or expired OTP.
+_PAT_OTP_TTL_SEC = 0.0
 _PAT_OTP_STALE_MAX_SEC = 180.0
 _PAT_WS_CONNECT_COOLDOWN_UNTIL: dict[str, float] = {}
 _PAT_OTP_REST_COOLDOWN_UNTIL: dict[str, float] = {}
+# Serialize PAT connects so two threads never interleave POST→cache→handshake.
+_PAT_WS_SERIALIZE_LOCK = Lock()
 
 
 def get_deriv_app_id() -> str:
-    return str(
-        getattr(
-            app_config,
-            "DERIV_APP_ID",
-            getattr(
-                app_config,
-                "DERIV_OAUTH_CLIENT_ID",
-                getattr(app_config, "DERIV_WS_APP_ID", "1089"),
-            ),
-        )
-        or "1089"
-    ).strip() or "1089"
+    """``Deriv-App-ID`` for ``api.derivws.com/trading/v1/…`` (accounts, OTP).
+
+    Deriv's docs use the Registered App **OAuth client id** string for Trading REST
+    (same value as ``DERIV_OAUTH_CLIENT_ID``). Numeric ``1089`` is the *legacy*
+    ``ws.derivws.com`` app id and can produce invalid OTP handshakes when mixed
+    with a PAT from your own registered app.
+
+    Precedence: explicit override → OAuth client id → legacy numeric WS app id.
+    """
+    override = str(getattr(app_config, "DERIV_TRADING_API_APP_ID", "") or "").strip()
+    if override:
+        return override
+    client = str(getattr(app_config, "DERIV_OAUTH_CLIENT_ID", "") or "").strip()
+    if client:
+        return client
+    return str(getattr(app_config, "DERIV_WS_APP_ID", "1089") or "1089").strip() or "1089"
 
 
 def get_legacy_ws_url() -> str:
     aid = str(getattr(app_config, "DERIV_WS_APP_ID", "1089") or "1089").strip() or "1089"
     return f"wss://ws.derivws.com/websockets/v3?app_id={aid}"
+
+
+def _create_options_api_websocket(url: str, timeout: int) -> websocket.WebSocket:
+    """Handshake to ``api.derivws.com`` /options; match browser-style Origin when required."""
+    kw: dict = {}
+    if "api.derivws.com" in url.lower():
+        kw["origin"] = "https://api.derivws.com"
+    return websocket.create_connection(url, timeout=timeout, **kw)
 
 
 def _rest_json(method: str, url: str, token: str, payload: dict | None = None) -> dict:
@@ -219,7 +235,7 @@ def get_pat_ws_url(token: str, account_id: str | None = None) -> tuple[str, str]
     with _PAT_OTP_LOCK:
         cached = _PAT_OTP_CACHE.get(key)
         rest_blocked_until = float(_PAT_OTP_REST_COOLDOWN_UNTIL.get(key, 0.0))
-    if cached:
+    if cached and _PAT_OTP_TTL_SEC > 0:
         age = now - cached[0]
         if age <= _PAT_OTP_TTL_SEC:
             return cached[1], cached[2]
@@ -243,6 +259,7 @@ def get_pat_ws_url(token: str, account_id: str | None = None) -> tuple[str, str]
             "POST",
             f"https://api.derivws.com/trading/v1/options/accounts/{acct}/otp",
             token=tok,
+            payload={},
         )
         ws_url = _parse_ws_url(payload)
         if not ws_url:
@@ -268,53 +285,78 @@ def open_ws_for_token(
     """Return (ws, requires_authorize, account_hint)."""
     tok = str(token or "").strip()
     if is_pat_token(tok):
-        ws_url, acct = get_pat_ws_url(tok, account_id=account_id)
-        key = _pat_otp_cache_key(tok, acct)
+        with _PAT_WS_SERIALIZE_LOCK:
+            ws_url, acct = get_pat_ws_url(tok, account_id=account_id)
+            key = _pat_otp_cache_key(tok, acct)
 
-        def _connect_once(url: str) -> websocket.WebSocket:
-            now = time.monotonic()
-            with _PAT_OTP_LOCK:
-                blocked_until = float(_PAT_WS_CONNECT_COOLDOWN_UNTIL.get(key, 0.0))
-            if blocked_until > now:
-                wait_sec = int(blocked_until - now)
-                raise RuntimeError(f"PAT WebSocket connect cooldown active ({wait_sec}s remaining)")
-            return websocket.create_connection(url, timeout=timeout)
-
-        try:
-            return _connect_once(ws_url), False, acct
-        except websocket.WebSocketBadStatusException as exc:
-            msg = str(exc)
-            if "429" in msg or "1015" in msg:
-                retry_after = _extract_retry_after_seconds(msg, default=30)
+            def _connect_once(url: str) -> websocket.WebSocket:
+                now = time.monotonic()
                 with _PAT_OTP_LOCK:
-                    _PAT_WS_CONNECT_COOLDOWN_UNTIL[key] = time.monotonic() + min(retry_after, 7200)
-                raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from exc
+                    blocked_until = float(_PAT_WS_CONNECT_COOLDOWN_UNTIL.get(key, 0.0))
+                if blocked_until > now:
+                    wait_sec = int(blocked_until - now)
+                    raise RuntimeError(f"PAT WebSocket connect cooldown active ({wait_sec}s remaining)")
+                return _create_options_api_websocket(url, timeout)
 
-            # OTP URLs can expire earlier than cache TTL. If Deriv returns 401/invalid OTP
-            # during the WS handshake, purge OTP cache and retry once with a fresh OTP URL.
-            lower_msg = msg.lower()
-            otp_expired = (
-                "401" in msg
-                or "invalid or expired otp" in lower_msg
-                or "invalid otp" in lower_msg
-                or "expired otp" in lower_msg
-            )
-            if otp_expired:
+            def _finish_handshake_ok(
+                conn: websocket.WebSocket,
+                cache_key: str,
+                account_hint: str | None = None,
+            ) -> tuple[websocket.WebSocket, bool, str | None]:
                 with _PAT_OTP_LOCK:
-                    _PAT_OTP_CACHE.pop(key, None)
-                    _PAT_OTP_REST_COOLDOWN_UNTIL.pop(key, None)
-                fresh_url, fresh_acct = get_pat_ws_url(tok, account_id=acct)
-                fresh_key = _pat_otp_cache_key(tok, fresh_acct)
-                try:
-                    return websocket.create_connection(fresh_url, timeout=timeout), False, fresh_acct
-                except websocket.WebSocketBadStatusException as retry_exc:
-                    retry_msg = str(retry_exc)
-                    if "429" in retry_msg or "1015" in retry_msg:
-                        retry_after = _extract_retry_after_seconds(retry_msg, default=30)
-                        with _PAT_OTP_LOCK:
-                            _PAT_WS_CONNECT_COOLDOWN_UNTIL[fresh_key] = time.monotonic() + min(retry_after, 7200)
-                        raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from retry_exc
-                    raise RuntimeError(f"PAT WebSocket handshake failed after OTP refresh: {retry_msg}") from retry_exc
+                    _PAT_OTP_CACHE.pop(cache_key, None)
+                return conn, False, account_hint if account_hint is not None else acct
 
-            raise
+            try:
+                conn = _connect_once(ws_url)
+                return _finish_handshake_ok(conn, key)
+            except websocket.WebSocketBadStatusException as exc:
+                msg = str(exc)
+                if "429" in msg or "1015" in msg:
+                    retry_after = _extract_retry_after_seconds(msg, default=30)
+                    with _PAT_OTP_LOCK:
+                        _PAT_WS_CONNECT_COOLDOWN_UNTIL[key] = time.monotonic() + min(retry_after, 7200)
+                    raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from exc
+
+                # OTP URLs can expire earlier than cache TTL. If Deriv returns 401/invalid OTP
+                # during the WS handshake, purge OTP cache and retry once with a fresh OTP URL.
+                status = getattr(exc, "status_code", None)
+                body_raw = getattr(exc, "resp_body", None)
+                body_l = ""
+                if isinstance(body_raw, (bytes, bytearray)):
+                    body_l = bytes(body_raw).decode("utf-8", errors="replace").lower()
+                elif isinstance(body_raw, str):
+                    body_l = body_raw.lower()
+                lower_msg = msg.lower()
+                otp_expired = (
+                    status == 401
+                    or "401" in msg
+                    or "invalid or expired otp" in lower_msg
+                    or "invalid otp" in lower_msg
+                    or "expired otp" in lower_msg
+                    or ("otp" in body_l and ("invalid" in body_l or "expired" in body_l))
+                )
+                if otp_expired:
+                    with _PAT_OTP_LOCK:
+                        _PAT_OTP_CACHE.pop(key, None)
+                        _PAT_OTP_REST_COOLDOWN_UNTIL.pop(key, None)
+                    fresh_url, fresh_acct = get_pat_ws_url(tok, account_id=acct)
+                    fresh_key = _pat_otp_cache_key(tok, fresh_acct)
+                    try:
+                        ret = _create_options_api_websocket(fresh_url, timeout)
+                        return _finish_handshake_ok(ret, fresh_key, fresh_acct)
+                    except websocket.WebSocketBadStatusException as retry_exc:
+                        retry_msg = str(retry_exc)
+                        if "429" in retry_msg or "1015" in retry_msg:
+                            retry_after = _extract_retry_after_seconds(retry_msg, default=30)
+                            with _PAT_OTP_LOCK:
+                                _PAT_WS_CONNECT_COOLDOWN_UNTIL[fresh_key] = (
+                                    time.monotonic() + min(retry_after, 7200)
+                                )
+                            raise RuntimeError(f"PAT WebSocket rate-limited (retry_after={retry_after}s)") from retry_exc
+                        raise RuntimeError(
+                            f"PAT WebSocket handshake failed after OTP refresh: {retry_msg}"
+                        ) from retry_exc
+
+                raise
     return websocket.create_connection(get_legacy_ws_url(), timeout=timeout), True, None

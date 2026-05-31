@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Sequence
 
 import websocket
 
-from modules.deriv_auth import is_pat_token, open_ws_for_token
+from modules.deriv_auth import get_legacy_ws_url, is_pat_token, open_ws_for_token
 
 logger = logging.getLogger(__name__)
 _MARKET_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
@@ -61,72 +61,134 @@ def _rsi(closes: Sequence[float], period: int = 14) -> List[float | None]:
     return out
 
 
+def _ticks_history_request(symbol: str, count: int) -> Dict[str, Any]:
+    return {
+        "ticks_history": symbol,
+        "style": "ticks",
+        "count": min(max(count, 10), 5000),
+        "end": "latest",
+    }
+
+
+def _parse_ticks_history_response(resp: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if "error" in resp:
+        raise RuntimeError(resp["error"].get("message", "ticks_history failed"))
+    history = resp.get("history", {}) or {}
+    prices = history.get("prices", []) or []
+    times = history.get("times", []) or []
+    ticks: List[Dict[str, Any]] = []
+    if not prices and isinstance(history.get("ticks"), list):
+        for row in history["ticks"]:
+            if not isinstance(row, dict):
+                continue
+            q = row.get("quote")
+            if q is None:
+                q = row.get("price")
+            if q is None:
+                continue
+            ticks.append({"epoch": row.get("epoch"), "price": float(q)})
+    else:
+        for i, price in enumerate(prices):
+            ts = times[i] if i < len(times) else None
+            ticks.append({"epoch": ts, "price": float(price)})
+    return ticks
+
+
+def _recv_ticks_history(ws: websocket.WebSocket, symbol: str, count: int) -> List[Dict[str, Any]]:
+    ws.send(json.dumps(_ticks_history_request(symbol, count)))
+    resp: Dict[str, Any] = {}
+    for _ in range(50):
+        raw = ws.recv()
+        if not raw:
+            continue
+        resp = json.loads(raw)
+        if resp.get("msg_type") == "history" or "history" in resp:
+            return _parse_ticks_history_response(resp)
+        if "error" in resp:
+            return _parse_ticks_history_response(resp)
+    return _parse_ticks_history_response(resp)
+
+
+def fetch_ticks_history_public(symbol: str, count: int = 120) -> List[Dict[str, Any]]:
+    """Read-only tick history on legacy WS (no token). Used for charts when authorize fails."""
+    ws = websocket.create_connection(get_legacy_ws_url(), timeout=20)
+    try:
+        ticks = _recv_ticks_history(ws, symbol, count)
+        logger.info("Fetched %s public ticks for %s", len(ticks), symbol)
+        return ticks
+    finally:
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+
+def _authorize_failed_use_public(msg: str) -> bool:
+    m = str(msg or "").lower()
+    return (
+        "input validation failed" in m
+        or "authorize failed" in m
+        or "invalid token" in m
+        or "please log in" in m
+    )
+
+
 def fetch_ticks_history(
-    api_token: str, symbol: str, count: int = 120, *, account_id: str | None = None
+    api_token: str,
+    symbol: str,
+    count: int = 120,
+    *,
+    account_id: str | None = None,
+    bypass_cache: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Pull recent ticks via Deriv WebSocket ticks_history."""
+    """Pull recent ticks via Deriv WebSocket ticks_history (PAT OTP, legacy authorize, or public fallback)."""
     tok = str(api_token or "").strip()
+    if not tok:
+        return fetch_ticks_history_public(symbol, count)
+
     pat_key: str | None = None
     if is_pat_token(tok):
         pat_key = _pat_ticks_cache_key(tok, symbol, count, account_id)
-        with _PAT_TICKS_CACHE_LOCK:
-            cached = _PAT_TICKS_CACHE.get(pat_key)
-            if cached and (time_module.monotonic() - cached[0]) <= _PAT_TICKS_CACHE_TTL_SEC:
-                return list(cached[1])
+        if not bypass_cache:
+            with _PAT_TICKS_CACHE_LOCK:
+                cached = _PAT_TICKS_CACHE.get(pat_key)
+                if cached and (time_module.monotonic() - cached[0]) <= _PAT_TICKS_CACHE_TTL_SEC:
+                    return list(cached[1])
 
-    ws, requires_authorize, _account_hint = open_ws_for_token(
-        api_token, timeout=20, account_id=account_id
-    )
+    try:
+        ws, requires_authorize, _account_hint = open_ws_for_token(
+            tok, timeout=20, account_id=account_id
+        )
+    except Exception as exc:
+        if _authorize_failed_use_public(str(exc)):
+            logger.warning("WS open failed (%s); using public ticks for %s", exc, symbol)
+            return fetch_ticks_history_public(symbol, count)
+        raise
+
     ticks: List[Dict[str, Any]] = []
     try:
         if requires_authorize:
-            ws.send(json.dumps({"authorize": api_token}))
+            ws.send(json.dumps({"authorize": tok}))
             auth = json.loads(ws.recv())
             if "error" in auth:
-                raise RuntimeError(auth["error"].get("message", "authorize failed"))
+                msg = str(auth["error"].get("message", "authorize failed"))
+                if _authorize_failed_use_public(msg):
+                    logger.warning(
+                        "Legacy authorize rejected (%s). OAuth2 tokens need a PAT (pat_…) "
+                        "or legacy acct/token login. Using public tick history for charts.",
+                        msg,
+                    )
+                    return fetch_ticks_history_public(symbol, count)
+                raise RuntimeError(msg)
 
-        req = {
-            "ticks_history": symbol,
-            "style": "ticks",
-            "count": min(max(count, 10), 5000),
-            "end": "latest",
-        }
-        ws.send(json.dumps(req))
-        resp = {}
-        for _ in range(50):
-            raw = ws.recv()
-            if not raw:
-                continue
-            resp = json.loads(raw)
-            if resp.get("msg_type") == "history" or "history" in resp:
-                break
-            if "error" in resp:
-                raise RuntimeError(resp["error"].get("message", "ticks_history failed"))
-        if "error" in resp:
-            raise RuntimeError(resp["error"].get("message", "ticks_history failed"))
-        history = resp.get("history", {}) or {}
-        prices = history.get("prices", []) or []
-        times = history.get("times", []) or []
-        if not prices and isinstance(history.get("ticks"), list):
-            for row in history["ticks"]:
-                if not isinstance(row, dict):
-                    continue
-                q = row.get("quote")
-                if q is None:
-                    q = row.get("price")
-                if q is None:
-                    continue
-                ticks.append({"epoch": row.get("epoch"), "price": float(q)})
-        else:
-            for i, price in enumerate(prices):
-                ts = times[i] if i < len(times) else None
-                ticks.append({"epoch": ts, "price": float(price)})
+        ticks = _recv_ticks_history(ws, symbol, count)
         logger.info("Fetched %s ticks for %s", len(ticks), symbol)
     finally:
         try:
             ws.close()
         except Exception:
             pass
+
     if pat_key is not None and ticks:
         with _PAT_TICKS_CACHE_LOCK:
             _PAT_TICKS_CACHE[pat_key] = (time_module.monotonic(), list(ticks))
@@ -139,11 +201,14 @@ def build_market_payload(
     timeframe: str = "tick",
     *,
     account_id: str | None = None,
+    fresh: bool = False,
 ) -> Dict[str, Any]:
     """
     timeframe: reserved for future OHLC aggregation; currently tick-based series.
     """
-    raw = fetch_ticks_history(api_token, symbol, count=150, account_id=account_id)
+    raw = fetch_ticks_history(
+        api_token, symbol, count=150, account_id=account_id, bypass_cache=fresh
+    )
     prices = [t["price"] for t in raw]
     ma20 = _sma(prices, 20)
     rsi14 = _rsi(prices, 14)

@@ -1,66 +1,282 @@
 {% extends "base.html" %}
 {% set active_nav = 'copy' %}
-{% block title %}Copy Trading — Deriv Platform{% endblock %}
+{% block body_class %}copy-page copy-marketplace-page{% endblock %}
+{% block title %}Copy Trading Marketplace — MatchTraders{% endblock %}
 {% block content %}
-    <div class="page-inner">
-      <header class="topbar card">
-        <div>
-          <h1>Copy Trading</h1>
-          <p class="subtle">Register as follower; bot trades sync as copy events (demo model)</p>
+    <div class="page-inner page-inner--copy-marketplace">
+      <!-- Section 1 — Header -->
+      <header class="copy-mkt-hero">
+        <div class="copy-mkt-hero__text">
+          <h1 class="copy-mkt-hero__title">Copy Trading Marketplace</h1>
+          <p class="copy-mkt-hero__sub">Discover top-performing traders and automatically mirror their trades.</p>
         </div>
-        <div class="auth-panel">
-          <span id="authAccount" class="subtle">Not logged in</span>
-          <a id="loginDerivBtn" class="btn btn-blue" href="/auth/deriv/login">Login with Deriv</a>
-          <button id="logoutDerivBtn" class="btn btn-stop hidden">Logout</button>
+        <div class="copy-mkt-kpis" aria-label="Marketplace statistics">
+          <div class="copy-mkt-kpi">
+            <span class="copy-mkt-kpi__label">Traders</span>
+            <strong id="copyKpiTraders" class="copy-mkt-kpi__value">152</strong>
+          </div>
+          <div class="copy-mkt-kpi">
+            <span class="copy-mkt-kpi__label">Active Followers</span>
+            <strong id="copyKpiFollowers" class="copy-mkt-kpi__value">4,821</strong>
+          </div>
+          <div class="copy-mkt-kpi">
+            <span class="copy-mkt-kpi__label">Today's ROI</span>
+            <strong id="copyKpiTodayRoi" class="copy-mkt-kpi__value copy-pos">+3.2%</strong>
+          </div>
+          <div class="copy-mkt-kpi">
+            <span class="copy-mkt-kpi__label">Copied Trades</span>
+            <strong id="copyKpiCopiedTrades" class="copy-mkt-kpi__value">18,422</strong>
+          </div>
         </div>
       </header>
-      <div class="section-tabs">
-        <button type="button">Summary</button>
-        <button type="button">Transactions</button>
-        <button type="button">Journal</button>
-        <button type="button">Logs</button>
-      </div>
 
-      <div class="grid two-col">
-        <section class="card">
-          <h2>Master</h2>
-          <label>
-            Master ID
-            <input id="masterIdInput" type="text" value="platform_master" />
-          </label>
-          <button id="setMasterBtn" class="btn btn-blue">Set Master</button>
-          <div id="masterStats" class="subtle stats-block"></div>
-        </section>
+      <!-- Main nav tabs -->
+      <nav class="copy-mkt-tabs" role="tablist" aria-label="Copy trading views">
+        <button type="button" class="copy-mkt-tab is-active" data-copy-view="marketplace" role="tab" aria-selected="true">Discover</button>
+        <button type="button" class="copy-mkt-tab" data-copy-view="leaderboard" role="tab" aria-selected="false">Leaderboard</button>
+        <button type="button" class="copy-mkt-tab" data-copy-view="portfolio" role="tab" aria-selected="false">Portfolio</button>
+        <button type="button" class="copy-mkt-tab" data-copy-view="copies" role="tab" aria-selected="false">My Copies</button>
+      </nav>
 
-        <section class="card">
-          <h2>Follow</h2>
-          <label>
-            Follower ID
-            <input id="followerIdInput" type="text" value="follower_1" />
-          </label>
-          <div class="button-row">
-            <button id="followBtn" class="btn btn-start">Follow</button>
-            <button id="unfollowBtn" class="btn btn-stop">Unfollow</button>
+      <!-- VIEW: Marketplace -->
+      <div id="copyViewMarketplace" class="copy-mkt-view is-active" role="tabpanel">
+        <div class="copy-mkt-toolbar">
+          <div class="copy-mkt-search-wrap">
+            <input id="copyTraderSearch" type="search" class="copy-mkt-search" placeholder="Search traders…" aria-label="Search traders" />
           </div>
-        </section>
+          <select id="copyTraderSort" class="copy-mkt-select" aria-label="Sort traders">
+            <option value="rank">Top ranked</option>
+            <option value="roi">Highest ROI</option>
+            <option value="followers">Most followers</option>
+            <option value="winrate">Win rate</option>
+            <option value="recent">Recently active</option>
+          </select>
+        </div>
+        <div class="copy-mkt-filters" role="group" aria-label="Filter traders">
+          <button type="button" class="copy-mkt-filter is-active" data-copy-filter="all">All</button>
+          <button type="button" class="copy-mkt-filter" data-copy-filter="low">Low Risk</button>
+          <button type="button" class="copy-mkt-filter" data-copy-filter="medium">Medium Risk</button>
+          <button type="button" class="copy-mkt-filter" data-copy-filter="high">High Risk</button>
+          <button type="button" class="copy-mkt-filter" data-copy-filter="roi">Highest ROI</button>
+          <button type="button" class="copy-mkt-filter" data-copy-filter="followers">Most Followers</button>
+          <button type="button" class="copy-mkt-filter" data-copy-filter="recent">Recently Active</button>
+        </div>
+        <div id="copyTraderGrid" class="copy-trader-grid" aria-live="polite"></div>
       </div>
 
-      <section class="card full-width">
-        <h2>Recent copy feed</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Source</th>
-                <th>Follower</th>
-                <th>Result</th>
-                <th>Profit</th>
-              </tr>
-            </thead>
-            <tbody id="copyFeedBody"></tbody>
-          </table>
+      <!-- VIEW: Leaderboard -->
+      <div id="copyViewLeaderboard" class="copy-mkt-view" role="tabpanel" hidden>
+        <div class="copy-mkt-card copy-mkt-card--table">
+          <header class="copy-mkt-card__head">
+            <h2 class="copy-mkt-card__title">Trader Leaderboard</h2>
+            <span class="copy-mkt-chip">Live rankings</span>
+          </header>
+          <div class="copy-mkt-table-wrap">
+            <table class="copy-mkt-table copy-mkt-table--leaderboard">
+              <thead>
+                <tr>
+                  <th scope="col">Rank</th>
+                  <th scope="col">Trader</th>
+                  <th scope="col">ROI</th>
+                  <th scope="col">Followers</th>
+                  <th scope="col">Win Rate</th>
+                  <th scope="col">Risk</th>
+                  <th scope="col">Markets</th>
+                  <th scope="col"></th>
+                </tr>
+              </thead>
+              <tbody id="copyLeaderboardBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: Portfolio -->
+      <div id="copyViewPortfolio" class="copy-mkt-view" role="tabpanel" hidden>
+        <div class="copy-portfolio-grid">
+          <div class="copy-portfolio-stat">
+            <span class="copy-mkt-label">Portfolio Value</span>
+            <strong id="copyPortfolioValue" class="copy-portfolio-stat__value">$0.00</strong>
+          </div>
+          <div class="copy-portfolio-stat">
+            <span class="copy-mkt-label">Total ROI</span>
+            <strong id="copyPortfolioRoi" class="copy-portfolio-stat__value">0.0%</strong>
+          </div>
+          <div class="copy-portfolio-stat">
+            <span class="copy-mkt-label">Today's Profit</span>
+            <strong id="copyPortfolioToday" class="copy-portfolio-stat__value">$0.00</strong>
+          </div>
+          <div class="copy-portfolio-stat">
+            <span class="copy-mkt-label">Monthly Profit</span>
+            <strong id="copyPortfolioMonth" class="copy-portfolio-stat__value">$0.00</strong>
+          </div>
+          <div class="copy-portfolio-stat">
+            <span class="copy-mkt-label">Active Copies</span>
+            <strong id="copyPortfolioActive" class="copy-portfolio-stat__value">0</strong>
+          </div>
+          <div class="copy-portfolio-stat">
+            <span class="copy-mkt-label">Drawdown</span>
+            <strong id="copyPortfolioDrawdown" class="copy-portfolio-stat__value copy-neg">0.0%</strong>
+          </div>
+        </div>
+        <div class="copy-mkt-card">
+          <header class="copy-mkt-card__head">
+            <h2 class="copy-mkt-card__title">Portfolio Growth</h2>
+            <span class="copy-mkt-label">Last 30 days</span>
+          </header>
+          <div id="copyPortfolioChart" class="copy-portfolio-chart" aria-hidden="true"></div>
+        </div>
+        <div class="copy-mkt-card copy-mkt-card--table">
+          <header class="copy-mkt-card__head">
+            <h2 class="copy-mkt-card__title">Recent Copied Trades</h2>
+          </header>
+          <div class="copy-mkt-table-wrap">
+            <table class="copy-mkt-table">
+              <thead>
+                <tr>
+                  <th scope="col">Trader</th>
+                  <th scope="col">Market</th>
+                  <th scope="col">Contract</th>
+                  <th scope="col">Stake</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Profit</th>
+                  <th scope="col">Time</th>
+                </tr>
+              </thead>
+              <tbody id="copyRecentTradesBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: My Copies -->
+      <div id="copyViewCopies" class="copy-mkt-view" role="tabpanel" hidden>
+        <div id="copyActiveEmpty" class="copy-empty-state">
+          <div class="copy-empty-state__icon" aria-hidden="true">◎</div>
+          <h2 class="copy-empty-state__title">You are not following any traders</h2>
+          <p class="copy-empty-state__text">Browse top performers and start copying trades automatically.</p>
+          <button type="button" class="btn btn-blue copy-empty-state__btn" data-copy-goto="marketplace">Discover Traders</button>
+        </div>
+        <div id="copyActiveGrid" class="copy-active-grid"></div>
+      </div>
+
+      <!-- Section 8 — Signal Provider CTA -->
+      <section class="copy-provider-cta">
+        <div class="copy-provider-cta__content">
+          <h2 class="copy-provider-cta__title">Become a Signal Provider</h2>
+          <ul class="copy-provider-cta__benefits">
+            <li>Publish strategies</li>
+            <li>Gain followers</li>
+            <li>Build reputation</li>
+            <li>Earn revenue share</li>
+          </ul>
+          <button type="button" id="copyBecomeProviderBtn" class="btn btn-blue">Become Provider</button>
         </div>
       </section>
     </div>
+
+    <!-- Trader Profile Modal -->
+    <div id="copyProfileModal" class="copy-modal hidden" role="dialog" aria-modal="true" aria-labelledby="copyProfileTitle">
+      <div class="copy-modal__backdrop" data-copy-close></div>
+      <div class="copy-modal__panel copy-modal__panel--wide">
+        <header class="copy-modal__head">
+          <div class="copy-profile-head">
+            <span id="copyProfileAvatar" class="copy-trader-avatar copy-trader-avatar--lg"></span>
+            <div>
+              <h2 id="copyProfileTitle" class="copy-modal__title">Trader</h2>
+              <p id="copyProfileStyle" class="copy-modal__sub"></p>
+            </div>
+          </div>
+          <button type="button" class="copy-modal__close" data-copy-close aria-label="Close">&times;</button>
+        </header>
+        <div class="copy-modal__body">
+          <div class="copy-profile-meta">
+            <div><span class="copy-mkt-label">Experience</span><strong id="copyProfileExperience">—</strong></div>
+            <div><span class="copy-mkt-label">Followers</span><strong id="copyProfileFollowers">—</strong></div>
+            <div><span class="copy-mkt-label">Markets</span><strong id="copyProfileMarkets">—</strong></div>
+            <div><span class="copy-mkt-label">Risk</span><strong id="copyProfileRisk">—</strong></div>
+          </div>
+          <div class="copy-profile-metrics">
+            <div class="copy-profile-metric"><span class="copy-mkt-label">Win Rate</span><strong id="copyProfileWinRate">—</strong></div>
+            <div class="copy-profile-metric"><span class="copy-mkt-label">ROI</span><strong id="copyProfileRoi">—</strong></div>
+            <div class="copy-profile-metric"><span class="copy-mkt-label">Drawdown</span><strong id="copyProfileDrawdown">—</strong></div>
+            <div class="copy-profile-metric"><span class="copy-mkt-label">Total Trades</span><strong id="copyProfileTrades">—</strong></div>
+            <div class="copy-profile-metric"><span class="copy-mkt-label">Avg Profit</span><strong id="copyProfileAvgProfit">—</strong></div>
+          </div>
+          <div class="copy-profile-charts">
+            <div class="copy-mkt-card copy-mkt-card--chart">
+              <span class="copy-mkt-label">Equity Curve</span>
+              <div id="copyProfileEquityChart" class="copy-mini-chart"></div>
+            </div>
+            <div class="copy-mkt-card copy-mkt-card--chart">
+              <span class="copy-mkt-label">Monthly ROI</span>
+              <div id="copyProfileRoiChart" class="copy-mini-chart"></div>
+            </div>
+          </div>
+          <div class="copy-mkt-card copy-mkt-card--table">
+            <span class="copy-mkt-label">Recent Trades</span>
+            <div class="copy-mkt-table-wrap">
+              <table class="copy-mkt-table copy-mkt-table--compact">
+                <thead>
+                  <tr><th>Trade</th><th>Result</th><th>Profit</th><th>Date</th></tr>
+                </thead>
+                <tbody id="copyProfileTradesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <footer class="copy-modal__foot">
+          <button type="button" class="btn" data-copy-close>Close</button>
+          <button type="button" id="copyProfileCopyBtn" class="btn btn-teal">Copy Trader</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Copy Settings Modal -->
+    <div id="copySettingsModal" class="copy-modal hidden" role="dialog" aria-modal="true" aria-labelledby="copySettingsTitle">
+      <div class="copy-modal__backdrop" data-copy-close></div>
+      <div class="copy-modal__panel">
+        <header class="copy-modal__head">
+          <h2 id="copySettingsTitle" class="copy-modal__title">Copy Settings</h2>
+          <button type="button" class="copy-modal__close" data-copy-close aria-label="Close">&times;</button>
+        </header>
+        <form id="copySettingsForm" class="copy-modal__body copy-settings-form">
+          <p class="copy-settings-trader"><span class="copy-mkt-label">Trader</span> <strong id="copySettingsTraderName">—</strong></p>
+          <label class="copy-settings-field">
+            <span class="copy-mkt-label">Allocation Amount (USD)</span>
+            <input id="copySettingsAllocation" type="number" min="1" step="1" value="100" required />
+          </label>
+          <label class="copy-settings-field">
+            <span class="copy-mkt-label">Multiplier</span>
+            <input id="copySettingsMultiplier" type="number" min="0.1" max="5" step="0.1" value="1" required />
+          </label>
+          <label class="copy-settings-field">
+            <span class="copy-mkt-label">Risk Limit (%)</span>
+            <input id="copySettingsRiskLimit" type="number" min="1" max="100" step="1" value="25" required />
+          </label>
+          <label class="copy-settings-field">
+            <span class="copy-mkt-label">Max Daily Loss (USD)</span>
+            <input id="copySettingsMaxLoss" type="number" min="1" step="1" value="20" required />
+          </label>
+          <label class="copy-settings-field">
+            <span class="copy-mkt-label">Max Open Trades</span>
+            <input id="copySettingsMaxOpen" type="number" min="1" max="20" step="1" value="3" required />
+          </label>
+          <fieldset class="copy-settings-field">
+            <legend class="copy-mkt-label">Copy Existing Positions?</legend>
+            <div class="copy-settings-radio-row">
+              <label><input type="radio" name="copyExisting" value="yes" /> Yes</label>
+              <label><input type="radio" name="copyExisting" value="no" checked /> No</label>
+            </div>
+          </fieldset>
+        </form>
+        <footer class="copy-modal__foot">
+          <button type="button" class="btn" data-copy-close>Cancel</button>
+          <button type="submit" form="copySettingsForm" class="btn btn-teal">Start Copying</button>
+        </footer>
+      </div>
+    </div>
+{% endblock %}
+{% block extra_scripts %}
+    <script src="/static/copy_marketplace.js?v=copy-v2-1"></script>
 {% endblock %}

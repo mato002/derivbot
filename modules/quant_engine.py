@@ -83,7 +83,7 @@ class DigitStatsEngine:
 
 
 class RiskEngine:
-    """Session-level risk gating and simple dynamic stake sizing."""
+    """Deprecated: use SessionRiskEngine in modules.risk_engine (kept for backward compatibility)."""
 
     def __init__(self) -> None:
         self.max_trades_session = 120
@@ -224,12 +224,33 @@ class TradeJournal:
         return out
 
 
-def run_digit_backtest(digits: Sequence[int], barrier: int = 5, stake: float = 1.0) -> Dict[str, Any]:
+def run_digit_backtest(
+    digits: Sequence[int],
+    barrier: int = 5,
+    stake: float = 1.0,
+    *,
+    strategy: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     """
-    Replay naive mean-reversion over/under:
-    - Trigger on 3 repeated digits.
-    - If repeated digit is statistically over-represented (z>1), fade it with UNDER; else OVER.
+    Production-accurate backtest: same pipeline as live, next-tick resolution.
+
+    The ``barrier`` parameter is kept for API compatibility but ignored when
+    ``strategy`` is provided (barriers come from the signal engine).
     """
+    from modules.backtest_engine import run_pipeline_backtest
+    from modules.strategy_engine import load_strategy
+
+    strat = strategy if strategy is not None else load_strategy()
+    result = run_pipeline_backtest(list(digits), strat, stake=float(stake), skip_confluence=True)
+    out = result.to_dict()
+    out["legacy_barrier_param_ignored"] = barrier
+    return out
+
+
+def run_digit_backtest_legacy(
+    digits: Sequence[int], barrier: int = 5, stake: float = 1.0
+) -> Dict[str, Any]:
+    """Deprecated same-tick z-score backtest — retained for regression comparison only."""
     stats = DigitStatsEngine(window=500, transition_window=1200)
     trades = 0
     wins = 0
@@ -262,15 +283,7 @@ def run_digit_backtest(digits: Sequence[int], barrier: int = 5, stake: float = 1
     max_dd = 0.0
     for x in eq_curve:
         peak = max(peak, x)
-        max_dd = max(max_dd, peak - x)
-    returns = [eq_curve[i] - eq_curve[i - 1] for i in range(1, len(eq_curve))]
-    if returns:
-        mu = sum(returns) / len(returns)
-        var = sum((r - mu) ** 2 for r in returns) / max(1, len(returns) - 1)
-        std = math.sqrt(var)
-        sharpe = (mu / std) if std > 1e-12 else 0.0
-    else:
-        sharpe = 0.0
+        max_dd = max(max_dd, x - peak)
     return {
         "trades": trades,
         "wins": wins,
@@ -278,5 +291,6 @@ def run_digit_backtest(digits: Sequence[int], barrier: int = 5, stake: float = 1
         "expectancy": round(expectancy, 4),
         "pnl": round(pnl, 2),
         "max_drawdown": round(max_dd, 2),
-        "sharpe_like": round(sharpe, 4),
+        "deprecated": True,
+        "look_ahead_bias": True,
     }
